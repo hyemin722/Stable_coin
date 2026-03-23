@@ -1,0 +1,1679 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blockchain — MetaMask 지갑 연결 & 가격 추적</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%234f46e5'/><text x='50' y='68' font-size='55' text-anchor='middle' fill='white'>🔗</text></svg>">
+
+  <!-- 웹폰트: Noto Sans KR (한글 최적화) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- ethers.js v6 — 이더리움 블록체인과 통신하기 위한 라이브러리 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+
+  <!-- Tailwind 다크모드 + 폰트 설정 -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Noto Sans KR"', 'system-ui', '-apple-system', 'sans-serif'],
+          },
+        },
+      },
+    }
+  </script>
+
+  <!--
+    다크모드 깜빡임(FOUC) 방지 스크립트
+    페이지가 렌더링되기 전에 실행되어야 하므로 <head>에 위치
+    비유: 방에 들어가기 전에 전등 스위치를 먼저 확인하는 것
+  -->
+  <script>
+    (function () {
+      var saved = localStorage.getItem('theme');
+      if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
+
+  <style>
+    /* 페이드인 애니메이션 */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in {
+      animation: fadeInUp 0.5s ease-out both;
+    }
+    .animate-fade-in-delay-1 { animation-delay: 0.1s; }
+    .animate-fade-in-delay-2 { animation-delay: 0.2s; }
+    .animate-fade-in-delay-3 { animation-delay: 0.3s; }
+
+    /* 연결 상태 표시등 깜빡임 */
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    .animate-blink { animation: blink 2s ease-in-out infinite; }
+
+    /* Tip 버튼 은은한 반짝임 */
+    @keyframes shimmer {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+      50% { box-shadow: 0 0 12px 4px rgba(251, 191, 36, 0.55); }
+    }
+    .animate-shimmer { animation: shimmer 2.5s ease-in-out infinite; }
+
+    /* <details> 화살표 커스텀 */
+    details > summary { cursor: pointer; list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary::marker { display: none; }
+    details[open] > summary .chevron { transform: rotate(90deg); }
+    .chevron { transition: transform 0.2s ease; display: inline-block; }
+
+    /* 모달 팝업 애니메이션 */
+    @keyframes modalBackdropIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes modalContentIn {
+      from { opacity: 0; transform: scale(0.85) translateY(20px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    @keyframes modalBackdropOut {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+    @keyframes modalContentOut {
+      from { opacity: 1; transform: scale(1) translateY(0); }
+      to { opacity: 0; transform: scale(0.85) translateY(20px); }
+    }
+    .modal-backdrop-in { animation: modalBackdropIn 0.25s ease-out both; }
+    .modal-content-in { animation: modalContentIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+    .modal-backdrop-out { animation: modalBackdropOut 0.2s ease-in both; }
+    .modal-content-out { animation: modalContentOut 0.2s ease-in both; }
+
+    /* 스크롤바 커스텀 (다크모드 대응) */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+    .dark ::-webkit-scrollbar-thumb { background: #475569; }
+
+    /* 가격 변동 플래시 효과 */
+    @keyframes flashGreen {
+      0% { background-color: rgba(16, 185, 129, 0.25); }
+      100% { background-color: transparent; }
+    }
+    @keyframes flashRed {
+      0% { background-color: rgba(239, 68, 68, 0.25); }
+      100% { background-color: transparent; }
+    }
+    .flash-up { animation: flashGreen 1s ease-out; }
+    .flash-down { animation: flashRed 1s ease-out; }
+
+    /* 토스트 알림 */
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(16px) scale(0.95); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .toast-enter { animation: toastIn 0.3s ease-out; }
+  </style>
+</head>
+
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 min-h-screen font-sans transition-colors duration-300">
+
+  <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <!-- 헤더: 그라디언트 배경 + 프로젝트 타이틀 + 다크모드 토글 -->
+  <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <header class="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 dark:from-indigo-900 dark:via-purple-900 dark:to-indigo-950 text-white shadow-lg">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 py-5 flex flex-wrap gap-y-2 items-center justify-between">
+      <div>
+        <h1 class="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
+          <span>Blockchain Lab #2</span>
+        </h1>
+        <p class="text-indigo-200 dark:text-indigo-300 text-sm mt-0.5">MetaMask 지갑 연결 + 실시간 가격 추적</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- 언어 전환 버튼 -->
+        <a href="index_en.html"
+           class="h-10 flex items-center gap-1.5 rounded-full bg-white/15 hover:bg-white/25 transition-colors px-3 text-sm font-medium"
+           title="Switch to English" aria-label="Switch to English">
+          🌐 EN
+        </a>
+        <!-- 다크모드 토글 버튼 -->
+        <button id="theme-toggle" onclick="toggleTheme()"
+                class="w-10 h-10 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/25 transition-colors"
+                title="다크모드 전환" aria-label="다크모드 전환">
+          <span id="theme-icon" class="text-lg">🌙</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <!-- 메인 콘텐츠 영역                              -->
+  <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <main class="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+
+    <!-- 오프라인 감지 배너 -->
+    <div id="offline-banner" class="hidden rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 flex items-center gap-3" role="alert">
+      <span class="text-xl">📡</span>
+      <p class="text-sm font-medium text-red-700 dark:text-red-400">인터넷 연결이 끊겼습니다. 연결이 복구되면 자동으로 새로고침합니다.</p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- 섹션 1: MetaMask 지갑 연결 카드               -->
+    <!-- ============================================ -->
+    <section id="wallet-card" class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 p-5 sm:p-6 animate-fade-in transition-colors duration-300">
+
+      <!-- 상태: 로딩 (MetaMask 감지 중) -->
+      <div id="wallet-loading" class="flex items-center gap-3">
+        <span class="text-2xl">🦊</span>
+        <span class="font-medium text-slate-500 dark:text-slate-400">MetaMask 지갑 확인 중...</span>
+        <div class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500"></div>
+      </div>
+
+      <!-- 상태: MetaMask 미설치 -->
+      <div id="wallet-not-installed" class="hidden">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">🦊</span>
+            <div>
+              <p class="font-semibold text-amber-700 dark:text-amber-400">MetaMask가 감지되지 않았습니다</p>
+              <a href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer"
+                 class="text-sm text-amber-600 dark:text-amber-500 hover:underline">
+                MetaMask 설치하기 →
+              </a>
+            </div>
+          </div>
+          <button onclick="retryDetection()"
+                  class="rounded-lg border border-amber-300 dark:border-amber-700 px-4 py-1.5 text-sm font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors whitespace-nowrap ml-3">
+            다시 확인
+          </button>
+        </div>
+      </div>
+
+      <!-- 상태: 연결 전 (MetaMask 설치됨, 미연결) -->
+      <div id="wallet-disconnected" class="hidden">
+        <div class="flex flex-wrap gap-y-2 items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">🦊</span>
+            <span class="font-semibold text-slate-700 dark:text-slate-200">MetaMask 지갑</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="openTipModal()"
+                    class="rounded-lg border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-400 transition-colors animate-shimmer">
+              💡 초보자 Tip
+            </button>
+            <button id="btn-connect" onclick="connectWallet()"
+                    class="rounded-lg bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 px-5 py-2 text-sm font-medium text-white transition-colors shadow-sm">
+              지갑 연결
+            </button>
+          </div>
+        </div>
+        <p id="wallet-error-disconnected" class="hidden mt-3 text-sm text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded-lg px-3 py-2"></p>
+      </div>
+
+      <!-- 상태: 연결됨 -->
+      <div id="wallet-connected" class="hidden">
+        <!-- 헤더: 상태 배지 + 연결 해제 -->
+        <div class="flex flex-wrap gap-y-2 items-center justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">🦊</span>
+            <span class="font-semibold text-slate-700 dark:text-slate-200">MetaMask 지갑</span>
+            <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-blink"></span>
+              연결됨
+            </span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="openTipModal()"
+                    class="rounded-lg border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 px-3 py-1.5 text-sm font-medium text-amber-700 dark:text-amber-400 transition-colors animate-shimmer">
+              💡 Tip
+            </button>
+            <button onclick="disconnectWallet()"
+                    class="rounded-lg border border-slate-200 dark:border-slate-600 px-3 py-1.5 text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+              연결 해제
+            </button>
+          </div>
+        </div>
+
+        <!-- 지갑 정보 그리드: 주소 / 잔액 / 네트워크 -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+          <!-- 주소 -->
+          <div class="rounded-xl bg-slate-50 dark:bg-slate-700/50 p-3.5 group">
+            <p class="text-slate-400 dark:text-slate-500 text-xs mb-1.5 font-medium">주소</p>
+            <div class="flex items-center gap-2">
+              <p id="display-address" class="font-mono font-semibold text-slate-700 dark:text-slate-200" title="">-</p>
+              <button onclick="copyAddress()" title="주소 복사" aria-label="지갑 주소 복사"
+                      class="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 text-xs">
+                📋
+              </button>
+            </div>
+          </div>
+          <!-- 잔액 -->
+          <div class="rounded-xl bg-slate-50 dark:bg-slate-700/50 p-3.5">
+            <p class="text-slate-400 dark:text-slate-500 text-xs mb-1.5 font-medium">잔액</p>
+            <p id="display-balance" class="font-semibold text-slate-700 dark:text-slate-200">-</p>
+          </div>
+          <!-- 네트워크 -->
+          <div class="rounded-xl bg-slate-50 dark:bg-slate-700/50 p-3.5">
+            <p class="text-slate-400 dark:text-slate-500 text-xs mb-1.5 font-medium">네트워크</p>
+            <div class="flex items-center gap-2">
+              <span id="display-network-dot" class="h-2 w-2 rounded-full bg-slate-300"></span>
+              <p id="display-network" class="font-semibold text-slate-700 dark:text-slate-200">-</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sepolia 전환 안내 배너 -->
+        <div id="sepolia-warning" class="hidden mt-4 flex flex-wrap gap-y-2 items-center justify-between rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3.5">
+          <div class="flex items-center gap-2">
+            <span class="text-amber-500">⚠️</span>
+            <p class="text-sm font-medium text-amber-700 dark:text-amber-400">Sepolia 테스트넷으로 전환해주세요</p>
+          </div>
+          <button onclick="switchToSepolia()"
+                  class="rounded-lg bg-amber-500 hover:bg-amber-600 px-4 py-1.5 text-sm font-medium text-white transition-colors shadow-sm whitespace-nowrap ml-3">
+            Sepolia 전환
+          </button>
+        </div>
+
+        <p id="wallet-error-connected" class="hidden mt-3 text-sm text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded-lg px-3 py-2"></p>
+      </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- 섹션 2: 실시간 가격 추적 테이블               -->
+    <!-- ============================================ -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 p-5 sm:p-8 animate-fade-in animate-fade-in-delay-1 transition-colors duration-300">
+      <h2 class="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-slate-100 mb-1">실시간 가격 추적</h2>
+      <p class="text-slate-500 dark:text-slate-400 text-sm sm:text-base mb-6">CoinGecko API를 활용한 Bitcoin & Ethereum 가격 추적</p>
+
+      <!-- 로딩 스피너 -->
+      <div id="price-loading" class="flex flex-col items-center justify-center py-16 gap-3">
+        <div class="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 dark:border-slate-600 border-t-indigo-500"></div>
+        <span class="text-slate-400 dark:text-slate-500 text-sm">가격 데이터를 불러오는 중...</span>
+      </div>
+
+      <!-- 에러 표시 -->
+      <div id="price-error" class="hidden rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-8 text-center">
+        <p class="text-3xl mb-3">😵</p>
+        <p id="price-error-message" class="text-red-600 dark:text-red-400 font-medium mb-4"></p>
+        <button onclick="fetchPrices()"
+                class="rounded-lg bg-red-600 hover:bg-red-700 px-5 py-2 text-sm font-medium text-white transition-colors shadow-sm">
+          다시 시도
+        </button>
+      </div>
+
+      <!-- 가격 테이블 -->
+      <div id="price-table-wrapper" class="hidden">
+        <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-600">
+          <table class="w-full text-left">
+            <thead>
+              <tr class="bg-slate-800 dark:bg-slate-900 text-white text-sm">
+                <th class="px-4 sm:px-6 py-3.5 font-semibold">코인</th>
+                <th class="px-4 sm:px-6 py-3.5 font-semibold">USD 가격</th>
+                <th class="px-4 sm:px-6 py-3.5 font-semibold">KRW 가격</th>
+                <th class="px-4 sm:px-6 py-3.5 font-semibold">24h 변동률</th>
+                <th class="px-4 sm:px-6 py-3.5 font-semibold">시가총액</th>
+              </tr>
+            </thead>
+            <tbody id="price-tbody" class="divide-y divide-slate-100 dark:divide-slate-700" aria-live="polite"></tbody>
+          </table>
+        </div>
+
+        <!-- 하단 바: 마지막 업데이트 + 자동 갱신 + 새로고침 -->
+        <div class="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm text-slate-400 dark:text-slate-500">
+          <div class="flex items-center gap-3 flex-wrap">
+            <span>마지막 업데이트: <span id="last-updated" class="font-medium text-slate-500 dark:text-slate-400">-</span></span>
+            <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-blink"></span>
+              30초 자동 갱신
+            </span>
+          </div>
+          <button onclick="fetchPrices()"
+                  class="rounded-lg border border-slate-200 dark:border-slate-600 px-4 py-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-sm">
+            새로고침
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- 섹션 3: 이더리움 블록 정보 (Infura)             -->
+    <!-- ============================================ -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 p-5 sm:p-8 animate-fade-in animate-fade-in-delay-1 transition-colors duration-300">
+      <h2 class="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-slate-100 mb-1">이더리움 블록 정보</h2>
+      <p class="text-slate-500 dark:text-slate-400 text-sm sm:text-base mb-6">Infura JSON-RPC를 통해 최신 블록 데이터를 조회합니다</p>
+
+      <!-- 로딩 -->
+      <div id="block-loading" class="flex flex-col items-center justify-center py-12 gap-3">
+        <div class="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 dark:border-slate-600 border-t-indigo-500"></div>
+        <span class="text-slate-400 dark:text-slate-500 text-sm">블록 데이터를 불러오는 중...</span>
+      </div>
+
+      <!-- 에러 -->
+      <div id="block-error" class="hidden rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-8 text-center">
+        <p class="text-3xl mb-3">😵</p>
+        <p class="text-red-600 dark:text-red-400 font-medium mb-4">블록 정보를 가져올 수 없습니다.</p>
+        <button onclick="fetchBlockInfo()"
+                class="rounded-lg bg-red-600 hover:bg-red-700 px-5 py-2 text-sm font-medium text-white transition-colors shadow-sm">
+          다시 시도
+        </button>
+      </div>
+
+      <!-- 블록 정보 카드 -->
+      <div id="block-info-wrapper" class="hidden">
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <!-- 블록 번호 -->
+          <div class="rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 p-4">
+            <p class="text-indigo-400 dark:text-indigo-500 text-xs font-medium mb-1">블록 번호</p>
+            <p id="block-number" class="text-lg font-bold text-indigo-700 dark:text-indigo-300">#-</p>
+          </div>
+          <!-- 트랜잭션 수 -->
+          <div class="rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4">
+            <p class="text-emerald-400 dark:text-emerald-500 text-xs font-medium mb-1">트랜잭션 수</p>
+            <p id="block-tx-count" class="text-lg font-bold text-emerald-700 dark:text-emerald-300">-</p>
+          </div>
+          <!-- 타임스탬프 -->
+          <div class="rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 p-4">
+            <p class="text-purple-400 dark:text-purple-500 text-xs font-medium mb-1">블록 생성 시각</p>
+            <p id="block-timestamp" class="text-sm font-bold text-purple-700 dark:text-purple-300">-</p>
+          </div>
+          <!-- 가스 사용량 -->
+          <div class="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-4">
+            <p class="text-amber-400 dark:text-amber-500 text-xs font-medium mb-1">가스 사용량</p>
+            <p id="block-gas" class="text-sm font-bold text-amber-700 dark:text-amber-300">-</p>
+          </div>
+          <!-- 블록 해시(Hex) -->
+          <div class="rounded-xl bg-slate-100 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 p-4">
+            <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">블록 (Hex)</p>
+            <p id="block-hex" class="text-sm font-mono font-bold text-slate-600 dark:text-slate-300">-</p>
+          </div>
+          <!-- 검증자 -->
+          <div class="rounded-xl bg-slate-100 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 p-4">
+            <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">검증자 (Miner)</p>
+            <p id="block-miner" class="text-sm font-mono font-bold text-slate-600 dark:text-slate-300 truncate" title="">-</p>
+          </div>
+        </div>
+
+        <div class="mt-4 flex items-center justify-between text-sm text-slate-400 dark:text-slate-500">
+          <span>Infura Mainnet JSON-RPC</span>
+          <button onclick="fetchBlockInfo()"
+                  class="rounded-lg border border-slate-200 dark:border-slate-600 px-4 py-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-sm">
+            새로고침
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- 섹션 4: 트랜잭션 조회                          -->
+    <!-- ============================================ -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 p-5 sm:p-8 animate-fade-in animate-fade-in-delay-2 transition-colors duration-300">
+      <h2 class="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-slate-100 mb-1">트랜잭션 조회</h2>
+      <p class="text-slate-500 dark:text-slate-400 text-sm sm:text-base mb-6">트랜잭션 해시를 입력하여 상세 정보를 조회합니다 (메인넷 + Sepolia)</p>
+
+      <!-- 검색 입력 -->
+      <div class="flex flex-col sm:flex-row gap-3 mb-4">
+        <input id="tx-hash-input" type="text" placeholder="0x로 시작하는 트랜잭션 해시 입력..."
+               class="flex-1 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-4 py-3 text-sm font-mono text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors">
+        <button id="btn-search-tx" onclick="searchTransaction()"
+                class="rounded-xl bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 px-6 py-3 text-sm font-medium text-white transition-colors shadow-sm whitespace-nowrap">
+          조회
+        </button>
+      </div>
+
+      <!-- 트랜잭션 결과 -->
+      <div id="tx-result" class="hidden">
+        <div class="rounded-xl border border-slate-200 dark:border-slate-600 overflow-hidden">
+          <div id="tx-result-header" class="bg-slate-800 dark:bg-slate-900 px-4 sm:px-6 py-3 flex items-center gap-2">
+            <span id="tx-status-icon" class="text-lg"></span>
+            <span id="tx-status-text" class="text-white font-semibold text-sm"></span>
+            <span id="tx-network-badge" class="ml-auto rounded-full px-2.5 py-0.5 text-xs font-medium"></span>
+          </div>
+          <div class="divide-y divide-slate-100 dark:divide-slate-700">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-px bg-slate-100 dark:bg-slate-700">
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">TX 해시</p>
+                <p id="tx-hash" class="text-sm font-mono text-slate-700 dark:text-slate-200 break-all">-</p>
+              </div>
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">블록 번호</p>
+                <p id="tx-block" class="text-sm font-semibold text-slate-700 dark:text-slate-200">-</p>
+              </div>
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">보낸 사람 (From)</p>
+                <p id="tx-from" class="text-sm font-mono text-slate-700 dark:text-slate-200 break-all">-</p>
+              </div>
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">받는 사람 (To)</p>
+                <p id="tx-to" class="text-sm font-mono text-slate-700 dark:text-slate-200 break-all">-</p>
+              </div>
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">전송 금액</p>
+                <p id="tx-value" class="text-sm font-bold text-indigo-600 dark:text-indigo-400">-</p>
+              </div>
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">가스 가격</p>
+                <p id="tx-gas-price" class="text-sm font-semibold text-slate-700 dark:text-slate-200">-</p>
+              </div>
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">가스 사용량</p>
+                <p id="tx-gas-used" class="text-sm font-semibold text-slate-700 dark:text-slate-200">-</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 에러 -->
+      <div id="tx-error" class="hidden rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 text-center">
+        <p id="tx-error-message" class="text-red-600 dark:text-red-400 font-medium text-sm"></p>
+      </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- 섹션 5: Sepolia ETH 전송                      -->
+    <!-- ============================================ -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-indigo-200 dark:border-indigo-800/50 p-5 sm:p-8 animate-fade-in animate-fade-in-delay-2 transition-colors duration-300">
+      <h2 class="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-slate-100 mb-1">Sepolia ETH 전송</h2>
+      <p class="text-slate-500 dark:text-slate-400 text-sm sm:text-base mb-6">서버 지갑에서 Sepolia 테스트넷 ETH를 전송합니다</p>
+
+      <!-- 서버 지갑 정보 -->
+      <div id="server-wallet-info" class="rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 p-4 mb-6">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p class="text-indigo-400 dark:text-indigo-500 text-xs font-medium mb-1">서버 지갑 (Sepolia)</p>
+            <p id="server-address" class="text-sm font-mono font-semibold text-indigo-700 dark:text-indigo-300">로딩 중...</p>
+          </div>
+          <div class="text-right">
+            <p class="text-indigo-400 dark:text-indigo-500 text-xs font-medium mb-1">잔액</p>
+            <p id="server-balance" class="text-lg font-bold text-indigo-700 dark:text-indigo-300">-</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 전송 폼 -->
+      <div class="space-y-4">
+        <div>
+          <label for="send-to" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">받는 주소</label>
+          <input id="send-to" type="text" placeholder="0x로 시작하는 이더리움 주소..."
+                 class="w-full rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-4 py-3 text-sm font-mono text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors">
+        </div>
+        <div>
+          <label for="send-amount" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">전송 금액 (ETH)</label>
+          <input id="send-amount" type="text" placeholder="예: 0.001" value="0.001"
+                 class="w-full rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-4 py-3 text-sm font-mono text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors">
+        </div>
+        <button id="btn-send-eth" onclick="sendETH()"
+                class="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 px-6 py-3.5 text-sm font-semibold text-white transition-colors shadow-sm">
+          ETH 전송
+        </button>
+      </div>
+
+      <!-- 전송 진행 중 -->
+      <div id="send-loading" class="hidden mt-4 flex items-center gap-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-4">
+        <div class="h-5 w-5 animate-spin rounded-full border-2 border-amber-300 border-t-amber-600"></div>
+        <p class="text-sm font-medium text-amber-700 dark:text-amber-400">트랜잭션 전송 중... 블록에 포함될 때까지 기다리는 중입니다.</p>
+      </div>
+
+      <!-- 전송 결과 -->
+      <div id="send-result" class="hidden mt-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-lg">&#10003;</span>
+          <p class="font-semibold text-emerald-700 dark:text-emerald-300">전송 성공!</p>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div>
+            <p class="text-emerald-500 dark:text-emerald-600 text-xs font-medium mb-0.5">TX 해시</p>
+            <p id="send-tx-hash" class="font-mono text-emerald-700 dark:text-emerald-300 break-all text-xs">-</p>
+          </div>
+          <div>
+            <p class="text-emerald-500 dark:text-emerald-600 text-xs font-medium mb-0.5">블록 번호</p>
+            <p id="send-block" class="font-semibold text-emerald-700 dark:text-emerald-300">-</p>
+          </div>
+          <div>
+            <p class="text-emerald-500 dark:text-emerald-600 text-xs font-medium mb-0.5">전송 금액</p>
+            <p id="send-amount-result" class="font-semibold text-emerald-700 dark:text-emerald-300">-</p>
+          </div>
+          <div>
+            <p class="text-emerald-500 dark:text-emerald-600 text-xs font-medium mb-0.5">Etherscan</p>
+            <a id="send-etherscan-link" href="#" target="_blank" rel="noopener noreferrer"
+               class="text-emerald-600 dark:text-emerald-400 underline text-xs break-all">링크</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 전송 에러 -->
+      <div id="send-error" class="hidden mt-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 text-center">
+        <p id="send-error-message" class="text-red-600 dark:text-red-400 font-medium text-sm"></p>
+      </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- 섹션 6: 주의사항 & 트러블슈팅                   -->
+    <!-- ============================================ -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-red-200 dark:border-red-800/50 p-5 sm:p-6 animate-fade-in animate-fade-in-delay-2 transition-colors duration-300">
+      <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-1 flex items-center gap-2">
+        <span class="text-red-500">&#9888;</span> 주의사항 & 트러블슈팅
+      </h2>
+      <p class="text-slate-500 dark:text-slate-400 text-sm mb-4">자주 발생하는 오류와 해결 방법을 순서대로 정리했습니다.</p>
+
+      <div class="space-y-3">
+
+        <!-- 오류 1: file:// 프로토콜 -->
+        <details class="group rounded-xl border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-red-100/50 dark:hover:bg-red-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-red-400">&#9654;</span>
+              <h3 class="font-semibold text-red-800 dark:text-red-300">1. HTML 파일을 직접 열면 MetaMask가 작동하지 않음</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-red-700 dark:text-red-300 space-y-2 border-t border-red-200 dark:border-red-800 pt-3">
+            <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3">
+              <p class="font-medium text-red-600 dark:text-red-400 text-xs mb-1">증상</p>
+              <p>index.html을 더블클릭해서 열면 주소가 <code class="bg-red-200 dark:bg-red-800 px-1 rounded text-xs">file:///C:/...</code>로 시작하고, MetaMask가 "감지되지 않음"으로 표시된다.</p>
+            </div>
+            <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3">
+              <p class="font-medium text-red-600 dark:text-red-400 text-xs mb-1">원인</p>
+              <p>MetaMask는 보안상 <code class="bg-red-200 dark:bg-red-800 px-1 rounded text-xs">file://</code> 프로토콜에서는 <code class="bg-red-200 dark:bg-red-800 px-1 rounded text-xs">window.ethereum</code>을 주입하지 않는다. 반드시 <code class="bg-red-200 dark:bg-red-800 px-1 rounded text-xs">http://</code> 또는 <code class="bg-red-200 dark:bg-red-800 px-1 rounded text-xs">https://</code>로 접근해야 한다.</p>
+            </div>
+            <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">해결</p>
+              <p><strong>start.bat을 더블클릭</strong>하여 로컬 서버(<code class="bg-emerald-200 dark:bg-emerald-800 px-1 rounded text-xs">http://localhost:5500</code>)로 실행한다.</p>
+            </div>
+          </div>
+        </details>
+
+        <!-- 오류 2: MetaMask 감지 실패 -->
+        <details class="group rounded-xl border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-red-100/50 dark:hover:bg-red-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-red-400">&#9654;</span>
+              <h3 class="font-semibold text-red-800 dark:text-red-300">2. "MetaMask가 감지되지 않았습니다" 표시</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-red-700 dark:text-red-300 space-y-2 border-t border-red-200 dark:border-red-800 pt-3">
+            <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3">
+              <p class="font-medium text-red-600 dark:text-red-400 text-xs mb-1">증상</p>
+              <p>localhost로 접속했는데도 "MetaMask가 감지되지 않았습니다"가 표시된다.</p>
+            </div>
+            <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3">
+              <p class="font-medium text-red-600 dark:text-red-400 text-xs mb-1">원인</p>
+              <p>MetaMask 확장 프로그램이 <strong>비활성화</strong>되어 있거나, <strong>잠금 상태</strong>(비밀번호 미입력)이면 <code class="bg-red-200 dark:bg-red-800 px-1 rounded text-xs">window.ethereum</code>이 주입되지 않을 수 있다.</p>
+            </div>
+            <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">해결 (3단계)</p>
+              <ol class="list-decimal list-inside space-y-1 mt-1">
+                <li><code class="bg-emerald-200 dark:bg-emerald-800 px-1 rounded text-xs">chrome://extensions</code>에서 MetaMask가 <strong>활성화</strong>되어 있는지 확인</li>
+                <li>브라우저 툴바의 <strong>🦊 아이콘</strong>을 클릭하여 MetaMask <strong>잠금 해제</strong> (비밀번호 입력)</li>
+                <li>페이지 <strong>새로고침(F5)</strong> 또는 "다시 확인" 버튼 클릭</li>
+              </ol>
+            </div>
+          </div>
+        </details>
+
+        <!-- 오류 3: 연결 요청 중복 -->
+        <details class="group rounded-xl border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-red-100/50 dark:hover:bg-red-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-red-400">&#9654;</span>
+              <h3 class="font-semibold text-red-800 dark:text-red-300">3. "지갑 연결" 클릭 후 아무 반응 없음</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-red-700 dark:text-red-300 space-y-2 border-t border-red-200 dark:border-red-800 pt-3">
+            <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3">
+              <p class="font-medium text-red-600 dark:text-red-400 text-xs mb-1">증상</p>
+              <p>"지갑 연결" 버튼을 눌렀는데 MetaMask 팝업이 나타나지 않거나, "연결 중..."에서 멈춘다.</p>
+            </div>
+            <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3">
+              <p class="font-medium text-red-600 dark:text-red-400 text-xs mb-1">원인</p>
+              <p>이전에 요청한 연결 팝업이 아직 <strong>대기 중</strong>일 수 있다. MetaMask는 한 번에 하나의 연결 요청만 처리하므로, 이전 팝업을 처리하지 않으면 새 요청이 무시된다.</p>
+            </div>
+            <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">해결</p>
+              <p>브라우저 툴바의 <strong>🦊 MetaMask 아이콘</strong>을 클릭하면 대기 중인 팝업이 보인다. 거기서 "연결" 또는 "거부"를 선택하면 된다.</p>
+            </div>
+          </div>
+        </details>
+
+        <!-- 오류 4: Sepolia 네트워크 -->
+        <details class="group rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-amber-400">&#9654;</span>
+              <h3 class="font-semibold text-amber-800 dark:text-amber-300">4. "Sepolia 테스트넷으로 전환해주세요" 경고</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-amber-700 dark:text-amber-300 space-y-2 border-t border-amber-200 dark:border-amber-800 pt-3">
+            <div class="rounded-lg bg-amber-100 dark:bg-amber-900/40 p-3">
+              <p class="font-medium text-amber-600 dark:text-amber-400 text-xs mb-1">증상</p>
+              <p>지갑 연결에 성공했지만 노란색 경고 배너가 표시된다.</p>
+            </div>
+            <div class="rounded-lg bg-amber-100 dark:bg-amber-900/40 p-3">
+              <p class="font-medium text-amber-600 dark:text-amber-400 text-xs mb-1">원인</p>
+              <p>현재 MetaMask가 Ethereum Mainnet 등 다른 네트워크에 연결되어 있다. 이 앱은 <strong>Sepolia 테스트넷</strong>(Chain ID: 11155111)에서 동작하도록 설계되었다.</p>
+            </div>
+            <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">해결</p>
+              <p>경고 배너 옆의 <strong>"Sepolia 전환"</strong> 버튼을 클릭하면 자동으로 네트워크가 전환된다.</p>
+            </div>
+          </div>
+        </details>
+
+        <!-- 오류 5: 가격 로드 실패 -->
+        <details class="group rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-amber-400">&#9654;</span>
+              <h3 class="font-semibold text-amber-800 dark:text-amber-300">5. 가격 데이터를 가져올 수 없음</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-amber-700 dark:text-amber-300 space-y-2 border-t border-amber-200 dark:border-amber-800 pt-3">
+            <div class="rounded-lg bg-amber-100 dark:bg-amber-900/40 p-3">
+              <p class="font-medium text-amber-600 dark:text-amber-400 text-xs mb-1">증상</p>
+              <p>가격 테이블 대신 "가격 데이터를 가져올 수 없습니다" 에러가 표시된다.</p>
+            </div>
+            <div class="rounded-lg bg-amber-100 dark:bg-amber-900/40 p-3">
+              <p class="font-medium text-amber-600 dark:text-amber-400 text-xs mb-1">원인</p>
+              <p>인터넷 연결 불안정이거나, CoinGecko API의 무료 호출 제한(분당 10~30회)에 걸렸을 수 있다. CORS 정책으로 직접 호출이 차단될 수도 있다.</p>
+            </div>
+            <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">해결</p>
+              <p>인터넷 연결을 확인하고, <strong>"다시 시도"</strong> 버튼을 클릭한다. 앱이 자동으로 3개의 우회 경로(CORS 프록시)를 순차 시도한다.</p>
+            </div>
+          </div>
+        </details>
+
+      </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- 섹션 4: 2주차 핵심 개념 (접이식 카드)          -->
+    <!-- ============================================ -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 p-5 sm:p-6 animate-fade-in animate-fade-in-delay-2 transition-colors duration-300">
+      <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">2주차 핵심 개념</h2>
+
+      <div class="space-y-3">
+        <!-- 개념 1: EOA vs 스마트 컨트랙트 계정 -->
+        <details class="group rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-indigo-100/50 dark:hover:bg-indigo-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-indigo-400">▶</span>
+              <h3 class="font-semibold text-indigo-800 dark:text-indigo-300">EOA vs 스마트 컨트랙트 계정</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-indigo-700 dark:text-indigo-300 space-y-2 border-t border-indigo-200 dark:border-indigo-800 pt-3">
+            <p><strong>EOA</strong> (Externally Owned Account): 개인키로 제어하는 일반 지갑. MetaMask가 만드는 것.</p>
+            <p><strong>CA</strong> (Contract Account): 코드로 제어되는 계정. 스마트 컨트랙트 배포 시 생성.</p>
+            <div class="mt-3 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 p-3">
+              <p class="font-medium text-indigo-600 dark:text-indigo-400 text-xs mb-1">비유</p>
+              <p>EOA = 개인 통장 (본인 서명으로 출금), CA = 자동이체 규칙이 담긴 통장 (조건 충족 시 자동 실행)</p>
+            </div>
+            <div class="rounded-lg bg-indigo-100 dark:bg-indigo-900/40 p-3">
+              <p class="font-medium text-indigo-600 dark:text-indigo-400 text-xs mb-1">정석 설명</p>
+              <p>EOA는 ECDSA(secp256k1) 개인키-공개키 쌍으로 제어된다. CA는 EVM 바이트코드가 저장된 계정으로, 다른 계정의 메시지 호출에 의해서만 코드가 실행된다.</p>
+            </div>
+          </div>
+        </details>
+
+        <!-- 개념 2: 시드 문구 -->
+        <details class="group rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-emerald-400">▶</span>
+              <h3 class="font-semibold text-emerald-800 dark:text-emerald-300">시드 문구 (Seed Phrase)</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-emerald-700 dark:text-emerald-300 space-y-2 border-t border-emerald-200 dark:border-emerald-800 pt-3">
+            <p>12~24개의 영단어로 된 마스터 키. 이것만 있으면 지갑을 완전히 복구 가능.</p>
+            <p><strong class="text-red-600 dark:text-red-400">절대 타인에게 공개 금지</strong> — 시드 문구 = 모든 자산의 소유권.</p>
+            <div class="mt-3 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">비유</p>
+              <p>시드 문구 = 금고의 마스터키. 복사해서 누군가에게 주면 그 사람이 금고를 열 수 있음.</p>
+            </div>
+            <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">정석 설명</p>
+              <p>BIP-39 표준에 따라 128~256비트 엔트로피에서 생성된 니모닉 단어 목록. BIP-32/44 경로에 따라 무한한 개인키를 파생할 수 있는 마스터 시드 역할을 한다.</p>
+            </div>
+          </div>
+        </details>
+
+        <!-- 개념 3: Sepolia 테스트넷 -->
+        <details class="group rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-amber-400">▶</span>
+              <h3 class="font-semibold text-amber-800 dark:text-amber-300">Sepolia 테스트넷</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-amber-700 dark:text-amber-300 space-y-2 border-t border-amber-200 dark:border-amber-800 pt-3">
+            <p>이더리움 메인넷과 동일하게 동작하지만, ETH가 무료인 연습용 네트워크.</p>
+            <p>Chain ID: <code class="bg-amber-200 dark:bg-amber-800 px-1.5 py-0.5 rounded text-xs font-mono">11155111</code> (0xaa36a7)</p>
+            <div class="mt-3 rounded-lg bg-amber-100 dark:bg-amber-900/40 p-3">
+              <p class="font-medium text-amber-600 dark:text-amber-400 text-xs mb-1">비유</p>
+              <p>테스트넷 = 보드게임 화폐. 규칙은 진짜와 같지만 실제 가치 없음. 실수해도 돈을 잃지 않는다.</p>
+            </div>
+            <div class="rounded-lg bg-amber-100 dark:bg-amber-900/40 p-3">
+              <p class="font-medium text-amber-600 dark:text-amber-400 text-xs mb-1">정석 설명</p>
+              <p>Sepolia는 이더리움의 PoS(Proof of Stake) 기반 테스트 네트워크다. EIP-155의 Chain ID(11155111)로 식별되며, 트랜잭션 서명 시 replay attack을 방지한다.</p>
+            </div>
+          </div>
+        </details>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <!-- 초보자 Tip 모달 (오버레이 팝업)                  -->
+  <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <div id="tip-modal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="tip-modal-title">
+    <!-- 배경 오버레이 (클릭 시 닫힘) -->
+    <div id="tip-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeTipModal()"></div>
+
+    <!-- 모달 본체 -->
+    <div class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+      <div id="tip-content" class="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl dark:shadow-slate-900/80 border border-slate-200 dark:border-slate-700 w-full max-w-2xl max-h-[85vh] overflow-y-auto pointer-events-auto">
+
+        <!-- 모달 헤더 -->
+        <div class="sticky top-0 bg-gradient-to-r from-amber-500 to-orange-500 dark:from-amber-600 dark:to-orange-600 rounded-t-2xl px-6 py-5 flex items-center justify-between">
+          <div>
+            <h2 id="tip-modal-title" class="text-xl font-bold text-white flex items-center gap-2">
+              <span class="text-2xl">💡</span> 초보자를 위한 시작 가이드
+            </h2>
+            <p class="text-amber-100 text-sm mt-0.5">처음 시작하는 분들을 위한 실전 팁</p>
+          </div>
+          <button onclick="closeTipModal()"
+                  class="w-9 h-9 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors text-white text-lg"
+                  aria-label="닫기">
+            &#10005;
+          </button>
+        </div>
+
+        <!-- 모달 콘텐츠 -->
+        <div class="p-6 space-y-5">
+
+          <!-- Tip 1: 시작 금액 -->
+          <div class="rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-5">
+            <h3 class="font-bold text-emerald-800 dark:text-emerald-300 text-base mb-3 flex items-center gap-2">
+              <span class="w-7 h-7 rounded-full bg-emerald-500 text-white text-sm flex items-center justify-center font-bold">1</span>
+              얼마로 시작하면 좋을까?
+            </h3>
+            <div class="text-sm text-emerald-700 dark:text-emerald-300 space-y-2">
+              <p><strong>테스트넷(Sepolia)은 무료</strong>입니다. 실제 돈이 들지 않습니다!</p>
+              <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+                <p class="font-semibold mb-1">테스트 ETH 받는 방법</p>
+                <ol class="list-decimal list-inside space-y-1">
+                  <li><a href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia" target="_blank" rel="noopener noreferrer" class="text-emerald-600 dark:text-emerald-400 underline">Google Cloud Faucet</a>에 접속</li>
+                  <li>MetaMask 지갑 주소를 붙여넣기</li>
+                  <li>"Receive" 클릭 → <strong>0.05 Sepolia ETH</strong> 무료 수령</li>
+                </ol>
+              </div>
+              <p class="text-emerald-500 dark:text-emerald-400 italic">0.05 ETH면 테스트 트랜잭션을 수십 번 이상 실행할 수 있어 충분합니다.</p>
+            </div>
+          </div>
+
+          <!-- Tip 2: 추천 종목 -->
+          <div class="rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 p-5">
+            <h3 class="font-bold text-indigo-800 dark:text-indigo-300 text-base mb-3 flex items-center gap-2">
+              <span class="w-7 h-7 rounded-full bg-indigo-500 text-white text-sm flex items-center justify-center font-bold">2</span>
+              어떤 종목부터 봐야 할까?
+            </h3>
+            <div class="text-sm text-indigo-700 dark:text-indigo-300 space-y-3">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="rounded-lg bg-indigo-100 dark:bg-indigo-900/40 p-3">
+                  <p class="font-bold text-base mb-1">🟠 Bitcoin (BTC)</p>
+                  <p>시가총액 1위, "디지털 금"이라 불림. 가장 안정적이고 역사가 긴 암호화폐.</p>
+                  <p class="text-indigo-500 dark:text-indigo-400 text-xs mt-1">입문자 추천도: ★★★★★</p>
+                </div>
+                <div class="rounded-lg bg-indigo-100 dark:bg-indigo-900/40 p-3">
+                  <p class="font-bold text-base mb-1">🔷 Ethereum (ETH)</p>
+                  <p>시가총액 2위, 스마트 컨트랙트의 원조. DeFi, NFT 등 생태계의 기반.</p>
+                  <p class="text-indigo-500 dark:text-indigo-400 text-xs mt-1">입문자 추천도: ★★★★★</p>
+                </div>
+              </div>
+              <p class="text-indigo-500 dark:text-indigo-400 italic">처음에는 BTC와 ETH만 이해해도 충분합니다. 나머지 코인(알트코인)은 이 두 가지를 이해한 후에 알아보세요.</p>
+            </div>
+          </div>
+
+          <!-- Tip 3: MetaMask 첫 설정 -->
+          <div class="rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 p-5">
+            <h3 class="font-bold text-purple-800 dark:text-purple-300 text-base mb-3 flex items-center gap-2">
+              <span class="w-7 h-7 rounded-full bg-purple-500 text-white text-sm flex items-center justify-center font-bold">3</span>
+              MetaMask 첫 설정 순서
+            </h3>
+            <div class="text-sm text-purple-700 dark:text-purple-300">
+              <ol class="list-decimal list-inside space-y-2">
+                <li><strong>설치</strong> — <a href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer" class="text-purple-600 dark:text-purple-400 underline">metamask.io</a>에서 Chrome 확장 프로그램 설치</li>
+                <li><strong>지갑 생성</strong> — "새 지갑 만들기" 선택 → 비밀번호 설정</li>
+                <li><strong>시드 문구 백업</strong> — 12개 영단어를 <strong>종이에 적어서</strong> 안전한 곳에 보관</li>
+                <li><strong>테스트넷 활성화</strong> — 설정 > 고급 > "테스트 네트워크 표시" 켜기</li>
+                <li><strong>Sepolia 선택</strong> — 네트워크 드롭다운에서 "Sepolia 테스트 네트워크" 선택</li>
+                <li><strong>테스트 ETH 수령</strong> — Faucet에서 무료 ETH 받기</li>
+              </ol>
+            </div>
+          </div>
+
+          <!-- Tip 4: 절대 주의사항 -->
+          <div class="rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-5">
+            <h3 class="font-bold text-red-800 dark:text-red-300 text-base mb-3 flex items-center gap-2">
+              <span class="w-7 h-7 rounded-full bg-red-500 text-white text-sm flex items-center justify-center font-bold">4</span>
+              절대 주의사항
+            </h3>
+            <div class="text-sm text-red-700 dark:text-red-300 space-y-2">
+              <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3 space-y-1.5">
+                <p>🚫 <strong>시드 문구(12단어)를 절대 누구에게도 알려주지 마세요</strong> — 시드 문구를 알면 지갑의 모든 자산을 가져갈 수 있습니다.</p>
+                <p>🚫 <strong>DM으로 시드 문구를 요청하는 사람은 100% 사기</strong>입니다.</p>
+                <p>🚫 <strong>처음부터 메인넷에 실제 돈을 넣지 마세요</strong> — 먼저 테스트넷에서 충분히 연습하세요.</p>
+                <p>🚫 <strong>"무조건 오른다"는 말을 믿지 마세요</strong> — 암호화폐는 변동성이 매우 큽니다.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tip 5: 이 앱 활용법 -->
+          <div class="rounded-xl bg-slate-100 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 p-5">
+            <h3 class="font-bold text-slate-800 dark:text-slate-200 text-base mb-3 flex items-center gap-2">
+              <span class="w-7 h-7 rounded-full bg-slate-500 text-white text-sm flex items-center justify-center font-bold">5</span>
+              이 앱 활용 순서
+            </h3>
+            <div class="text-sm text-slate-600 dark:text-slate-300">
+              <ol class="list-decimal list-inside space-y-1.5">
+                <li>위의 MetaMask 설정을 완료한다</li>
+                <li>"지갑 연결" 버튼을 클릭하고 MetaMask 팝업에서 승인한다</li>
+                <li>지갑 주소, 잔액, 네트워크 정보가 표시되는지 확인한다</li>
+                <li>Sepolia가 아니면 "Sepolia 전환" 버튼을 클릭한다</li>
+                <li>아래 가격 테이블에서 BTC, ETH 시세를 실시간으로 확인한다</li>
+                <li>핵심 개념 카드를 펼쳐 읽으며 블록체인 기초를 학습한다</li>
+              </ol>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <!-- 푸터                                          -->
+  <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <footer class="mt-4 border-t border-slate-200 dark:border-slate-700 transition-colors duration-300">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400 dark:text-slate-500">
+      <p>
+        데이터 출처:
+        <a href="https://www.coingecko.com/" target="_blank" rel="noopener noreferrer"
+           class="text-indigo-400 hover:text-indigo-500 dark:text-indigo-500 dark:hover:text-indigo-400 hover:underline">CoinGecko API</a>
+      </p>
+      <p>Blockchain Lab #2</p>
+    </div>
+  </footer>
+
+  <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <!-- 자바스크립트                                    -->
+  <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <script>
+
+    // ════════════════════════════════════════════
+    // 초보자 Tip 모달 열기/닫기
+    // ════════════════════════════════════════════
+
+    /**
+     * Tip 모달 열기 — 배경 + 콘텐츠에 애니메이션 적용
+     */
+    function openTipModal() {
+      var modal = document.getElementById('tip-modal');
+      var backdrop = document.getElementById('tip-backdrop');
+      var content = document.getElementById('tip-content');
+
+      modal.classList.remove('hidden');
+
+      // 이전 애니메이션 클래스를 제거한 뒤 새 클래스를 부여
+      // (열고 → 닫고 → 다시 열 때 클래스 누적 방지)
+      backdrop.classList.remove('modal-backdrop-out');
+      backdrop.classList.add('modal-backdrop-in');
+      content.classList.remove('modal-content-out');
+      content.classList.add('modal-content-in');
+
+      // 스크롤 잠금 — 모달이 열려있는 동안 뒤 페이지 스크롤 방지
+      document.body.style.overflow = 'hidden';
+    }
+
+    /**
+     * Tip 모달 닫기 — 닫힘 애니메이션 후 hidden 처리
+     */
+    function closeTipModal() {
+      var modal = document.getElementById('tip-modal');
+      var backdrop = document.getElementById('tip-backdrop');
+      var content = document.getElementById('tip-content');
+
+      backdrop.classList.remove('modal-backdrop-in');
+      backdrop.classList.add('modal-backdrop-out');
+      content.classList.remove('modal-content-in');
+      content.classList.add('modal-content-out');
+
+      // 애니메이션 완료 후 모달 숨김
+      setTimeout(function () {
+        modal.classList.add('hidden');
+        document.body.style.overflow = '';
+      }, 250);
+    }
+
+    // ESC 키로 모달 닫기
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !document.getElementById('tip-modal').classList.contains('hidden')) {
+        closeTipModal();
+      }
+    });
+
+    // ════════════════════════════════════════════
+    // 파트 0: 다크 모드 (Dark Mode)
+    // ════════════════════════════════════════════
+    //
+    // 비유: 방의 전등 스위치. 버튼을 누르면 밝은 모드 ↔ 어두운 모드 전환.
+    //       사용자의 선택을 localStorage에 저장해서 다음 방문 때도 기억한다.
+    // 정석: Tailwind CSS의 'class' 다크모드 전략을 사용.
+    //       <html>에 'dark' 클래스 추가/제거로 전체 테마를 제어.
+    //       localStorage로 사용자 선호를 영속적으로 저장한다.
+
+    /**
+     * 다크모드 토글 — 현재 테마를 반전시킨다
+     */
+    function toggleTheme() {
+      var isDark = document.documentElement.classList.toggle('dark');
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+      updateThemeIcon();
+    }
+
+    /**
+     * 테마 아이콘 갱신 — 현재 모드에 맞는 아이콘 표시
+     */
+    function updateThemeIcon() {
+      var isDark = document.documentElement.classList.contains('dark');
+      document.getElementById('theme-icon').textContent = isDark ? '☀️' : '🌙';
+    }
+
+    // ════════════════════════════════════════════
+    // 파트 1: MetaMask 지갑 연결
+    // ════════════════════════════════════════════
+    //
+    // 비유: MetaMask = 은행 앱. 우리 웹사이트(가게)가 결제를 요청하면
+    //       MetaMask(은행 앱)가 팝업을 띄워 사용자에게 "이 가게에 계좌 정보를
+    //       공유하시겠습니까?" 하고 물어본다. 사용자가 승인해야만 연결됨.
+    //
+    // 정석: MetaMask는 EIP-1193 표준에 따라 window.ethereum 객체를 브라우저에 주입한다.
+    //       이 객체를 통해 JSON-RPC 방식으로 이더리움 네트워크와 통신한다.
+    //       ethers.js의 BrowserProvider가 이 저수준 통신을 추상화하여 편리한 API를 제공한다.
+
+    // Sepolia 테스트넷의 고유 식별 번호 (Chain ID)
+    // 메인넷=1, Sepolia=11155111, Polygon=137 등 각 네트워크마다 고유 번호가 있다
+    var SEPOLIA_CHAIN_ID = 11155111;
+
+    // Chain ID → 사람이 읽을 수 있는 네트워크 이름 매핑
+    var NETWORK_NAMES = {
+      1: 'Ethereum Mainnet',
+      11155111: 'Sepolia Testnet',
+      137: 'Polygon',
+      56: 'BNB Chain',
+    };
+
+    // 현재 연결된 지갑의 전체 주소 (복사 기능용)
+    var currentFullAddress = '';
+
+    /**
+     * 주소 축약 표시
+     * 42자리 전체 주소를 "0x1234...5678" 형태로 줄인다
+     *
+     * 비유: 전화번호를 "010-****-1234" 식으로 줄이는 것과 같다
+     * 정석: 이더리움 주소는 20바이트(40자리 hex + 0x 접두사 = 42자리)로 구성.
+     *       UI에서 전체를 표시하면 너무 길어서 앞 6자 + 뒤 4자만 표시하는 것이 관례.
+     */
+    function shortenAddress(addr) {
+      return addr.slice(0, 6) + '...' + addr.slice(-4);
+    }
+
+    /**
+     * 지갑 UI 상태 전환
+     * 4가지 상태 중 하나만 표시하고 나머지는 숨긴다
+     *
+     * @param {'loading'|'not-installed'|'disconnected'|'connected'} state
+     *
+     * 비유: TV 채널 변경. 한 번에 하나의 채널(상태)만 볼 수 있다.
+     * 정석: DOM의 classList.add('hidden') / remove('hidden')으로 display를 제어.
+     *       React의 조건부 렌더링을 바닐라 JS로 구현한 것.
+     */
+    function showWalletState(state) {
+      // 모든 상태 요소를 숨긴다
+      document.getElementById('wallet-loading').classList.add('hidden');
+      document.getElementById('wallet-not-installed').classList.add('hidden');
+      document.getElementById('wallet-disconnected').classList.add('hidden');
+      document.getElementById('wallet-connected').classList.add('hidden');
+
+      // 요청된 상태만 표시한다
+      var el = document.getElementById('wallet-' + state);
+      if (el) el.classList.remove('hidden');
+    }
+
+    /**
+     * 지갑 연결 — MetaMask에 연결 승인을 요청한다
+     *
+     * 비유: 은행 앱에서 "제3자 정보제공 동의" 팝업이 뜨는 것.
+     *       사용자가 "동의"를 눌러야 우리 앱이 지갑 정보에 접근할 수 있다.
+     * 정석: eth_requestAccounts (EIP-1102)를 호출하면 MetaMask가 사용자에게
+     *       계정 접근 권한을 요청하는 UI를 표시한다.
+     *       승인되면 연결된 계정 주소 배열이 반환된다.
+     */
+    async function connectWallet() {
+      if (!window.ethereum) return;
+
+      var btn = document.getElementById('btn-connect');
+      btn.textContent = '연결 중...';
+      btn.disabled = true;
+
+      try {
+        // BrowserProvider: window.ethereum을 래핑하여 고수준 API 제공
+        // 비유: 외국어 통역사 — JSON-RPC(원어민 언어)를 JS 개발자가 이해하는 말로 번역
+        var provider = new ethers.BrowserProvider(window.ethereum);
+
+        // MetaMask 팝업을 띄워 사용자에게 연결 승인 요청
+        await provider.send('eth_requestAccounts', []);
+
+        // 승인 완료 → 지갑 정보(주소, 잔액, 네트워크) 조회
+        await updateWalletInfo(provider);
+      } catch (err) {
+        // 사용자가 "거부"를 눌렀거나 기타 에러 발생
+        var errEl = document.getElementById('wallet-error-disconnected');
+        errEl.textContent = err.message || '지갑 연결 실패';
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.textContent = '지갑 연결';
+        btn.disabled = false;
+      }
+    }
+
+    /**
+     * 지갑 정보 업데이트 — 주소, 잔액, 네트워크를 조회하여 화면에 표시
+     *
+     * @param {ethers.BrowserProvider} provider - ethers.js Provider 객체
+     *
+     * 비유: 은행 앱에서 "내 계좌 조회" 버튼을 누르면
+     *       계좌번호(주소), 잔액, 어떤 은행(네트워크)인지 한 번에 보여주는 것.
+     * 정석: getSigner()는 현재 연결된 계정의 Signer 객체를 반환한다.
+     *       Signer는 트랜잭션에 서명할 수 있는 권한을 가진 추상 클래스.
+     *       getBalance()는 eth_getBalance RPC를 호출하여 Wei(BigInt) 단위 잔액을 반환한다.
+     */
+    async function updateWalletInfo(provider) {
+      // Signer: 서명할 수 있는 주체 (Provider는 읽기 전용, Signer는 서명까지 가능)
+      var signer = await provider.getSigner();
+
+      // 지갑 주소 조회 (0x로 시작하는 42자리 16진수)
+      var address = await signer.getAddress();
+      currentFullAddress = address;
+
+      // 잔액 조회 (Wei 단위로 반환됨)
+      // 1 ETH = 10^18 Wei — 컴퓨터는 소수점이 부정확하므로 정수(Wei)로 계산
+      var balanceWei = await provider.getBalance(address);
+
+      // Wei → ETH 변환 (사람이 읽을 수 있는 단위로)
+      var balanceEth = ethers.formatEther(balanceWei);
+
+      // 현재 연결된 네트워크 정보 조회
+      var network = await provider.getNetwork();
+      var chainId = Number(network.chainId);
+      var isSepolia = chainId === SEPOLIA_CHAIN_ID;
+
+      // 화면에 정보 표시
+      document.getElementById('display-address').textContent = shortenAddress(address);
+      document.getElementById('display-address').title = address;
+      document.getElementById('display-balance').textContent = parseFloat(balanceEth).toFixed(4) + ' ETH';
+      document.getElementById('display-network').textContent = NETWORK_NAMES[chainId] || 'Chain ' + chainId;
+
+      // 네트워크 상태 표시등 색상 변경
+      // Sepolia = 초록(정상), 그 외 = 노랑(전환 필요)
+      document.getElementById('display-network-dot').className =
+        'h-2 w-2 rounded-full ' + (isSepolia ? 'bg-emerald-500' : 'bg-amber-500');
+
+      // Sepolia가 아닌 경우 전환 안내 배너 표시
+      document.getElementById('sepolia-warning').classList.toggle('hidden', isSepolia);
+
+      showWalletState('connected');
+    }
+
+    /**
+     * Sepolia 테스트넷으로 네트워크 전환 요청
+     *
+     * 비유: 고속도로에서 차선 변경. MetaMask에게 "Sepolia 차선으로 바꿔주세요" 요청.
+     * 정석: wallet_switchEthereumChain (EIP-3326)은 지갑에 특정 Chain ID의
+     *       네트워크로 전환을 요청하는 RPC 메서드.
+     *       Chain ID는 16진수 문자열(0x 접두사) 형태로 전달해야 한다.
+     */
+    async function switchToSepolia() {
+      if (!window.ethereum) return;
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x' + SEPOLIA_CHAIN_ID.toString(16) }],
+          // 11155111 → 16진수 aa36a7 → '0xaa36a7'
+        });
+      } catch (err) {
+        var errEl = document.getElementById('wallet-error-connected');
+        errEl.textContent = err.message || '네트워크 전환 실패';
+        errEl.classList.remove('hidden');
+      }
+    }
+
+    /**
+     * 지갑 연결 해제 (UI만 초기화)
+     *
+     * 참고: MetaMask는 프로그래밍으로 완전한 "연결 해제"를 지원하지 않는다.
+     *       실제 연결을 끊으려면 MetaMask 설정에서 사이트 연결을 직접 해제해야 함.
+     *       여기서는 UI 상태만 초기화한다.
+     */
+    function disconnectWallet() {
+      currentFullAddress = '';
+      showWalletState('disconnected');
+    }
+
+    /**
+     * 주소를 클립보드에 복사
+     */
+    async function copyAddress() {
+      if (!currentFullAddress) return;
+      try {
+        await navigator.clipboard.writeText(currentFullAddress);
+        showToast('주소가 복사되었습니다');
+      } catch {
+        showToast('복사 실패');
+      }
+    }
+
+    /**
+     * 토스트 알림 표시 — 일정 시간 후 자동으로 사라지는 메시지
+     */
+    function showToast(message) {
+      var toast = document.createElement('div');
+      toast.className = 'fixed bottom-6 right-6 bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-800 px-4 py-2.5 rounded-xl shadow-xl text-sm font-medium z-50 toast-enter';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(function () {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s';
+        setTimeout(function () { toast.remove(); }, 300);
+      }, 2000);
+    }
+
+    /**
+     * MetaMask 이벤트 리스너 등록
+     *
+     * 비유: 초인종 시스템. 우리가 계속 "바뀌었나요?" 하고 물어보는 게 아니라,
+     *       MetaMask가 변경이 생기면 "딩동~" 하고 알려준다.
+     * 정석: window.ethereum은 Node.js EventEmitter 패턴을 따르는 이벤트 인터페이스를 제공.
+     *       accountsChanged — 계정 변경/연결 해제 시 발생
+     *       chainChanged — 네트워크 변경 시 발생 (페이지 새로고침 권장)
+     */
+    function setupWalletEvents() {
+      if (!window.ethereum) return;
+
+      // 계정 변경 감지
+      window.ethereum.on('accountsChanged', async function (accounts) {
+        if (accounts.length === 0) {
+          // 모든 계정의 연결이 해제됨
+          disconnectWallet();
+        } else {
+          // 다른 계정으로 전환됨 → 새 정보로 업데이트
+          var provider = new ethers.BrowserProvider(window.ethereum);
+          await updateWalletInfo(provider);
+        }
+      });
+
+      // 네트워크 변경 감지 → 페이지 새로고침
+      // ethers.js Provider 내부 캐시가 이전 네트워크 기준이므로 새로고침이 안전
+      window.ethereum.on('chainChanged', function () {
+        window.location.reload();
+      });
+    }
+
+    /**
+     * 지갑 초기화 — MetaMask가 주입될 때까지 대기 후 상태 설정
+     *
+     * 비유: 택배 기사(MetaMask)가 올 때까지 현관 앞에서 기다리는 것.
+     *       최대 3초까지 기다려보고, 안 오면 "부재중(미설치)" 처리.
+     * 정석: MetaMask는 페이지 로드 후 window.ethereum을 비동기로 주입한다.
+     *       DOMContentLoaded 시점에는 아직 주입되지 않았을 수 있으므로
+     *       폴링(100ms 간격, 최대 30회 = 3초)으로 감지한다.
+     */
+    /**
+     * 지갑이 감지되었을 때 호출 — 중복 호출 방지 포함
+     */
+    var walletDetected = false;
+    function onWalletDetected() {
+      if (walletDetected) return;
+      walletDetected = true;
+      showWalletState('disconnected');
+      setupWalletEvents();
+    }
+
+    /**
+     * "다시 확인" 버튼 — 수동 재감지 시도
+     */
+    function retryDetection() {
+      walletDetected = false;
+      showWalletState('loading');
+      initWallet();
+    }
+
+    /**
+     * 지갑 초기화 — 3가지 방법으로 MetaMask 감지
+     *
+     * 방법 1: window.ethereum 직접 확인 (전통적 방식)
+     * 방법 2: ethereum#initialized 이벤트 (MetaMask 주입 완료 신호)
+     * 방법 3: EIP-6963 표준 (최신 지갑 감지 프로토콜)
+     * + 폴링 폴백 (최대 5초)
+     */
+    function initWallet() {
+      // 방법 1: 이미 주입되어 있으면 바로 사용
+      if (window.ethereum) {
+        onWalletDetected();
+        return;
+      }
+
+      // 방법 2: MetaMask가 주입 완료 시 발생하는 이벤트
+      window.addEventListener('ethereum#initialized', function () {
+        onWalletDetected();
+      }, { once: true });
+
+      // 방법 3: EIP-6963 — 최신 지갑 감지 표준
+      // 지갑 확장이 자신을 "광고"하면, 그 provider를 사용
+      window.addEventListener('eip6963:announceProvider', function (event) {
+        if (!window.ethereum && event.detail && event.detail.provider) {
+          window.ethereum = event.detail.provider;
+        }
+        onWalletDetected();
+      });
+      window.dispatchEvent(new Event('eip6963:requestProvider'));
+
+      // 폴링 폴백: 위 방법들이 모두 실패할 경우 대비
+      var attempts = 0;
+      var maxAttempts = 50; // 100ms × 50회 = 최대 5초
+      var checkInterval = setInterval(function () {
+        attempts++;
+        if (window.ethereum) {
+          clearInterval(checkInterval);
+          onWalletDetected();
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkInterval);
+          if (!walletDetected) {
+            showWalletState('not-installed');
+          }
+        }
+      }, 100);
+    }
+
+    // ════════════════════════════════════════════
+    // 파트 2: 가격 추적 (CoinGecko API)
+    // ════════════════════════════════════════════
+    //
+    // 비유: 환전소 전광판. 30초마다 자동으로 최신 시세를 갱신하여 보여주는 전광판.
+    //       CoinGecko라는 환전소에 "BTC, ETH 시세 알려주세요" 하고 물어본다.
+    //
+    // 정석: Node.js 서버의 /api/prices 엔드포인트를 fetch()로 호출한다.
+    //       서버가 CoinGecko API를 대신 호출하므로 CORS 문제가 없다.
+    //       서버에서 30초 캐시를 적용하여 API 호출 횟수를 제한한다.
+
+    // 자동 갱신 주기 (밀리초) — 30초마다 최신 가격 조회
+    var REFRESH_INTERVAL = 30000;
+
+    // 이전 가격 저장 (플래시 효과 비교용)
+    var previousPrices = {};
+
+    // 서버 API 엔드포인트 — Node.js 서버가 CoinGecko를 대신 호출
+    var API_BASE = 'http://localhost:5500';
+    var PRICE_API = API_BASE + '/api/prices';
+
+    /**
+     * 숫자를 통화 형식으로 포맷
+     * 예: 67234.56 → "$67,234.56" (USD) 또는 "₩91,234,567" (KRW)
+     *
+     * 정석: Intl.NumberFormat API로 로케일에 맞는 통화 표시.
+     *       KRW는 소수점 불필요, USD는 소수점 2자리까지 표시.
+     */
+    function formatCurrency(value, currency) {
+      return new Intl.NumberFormat('ko-KR', {
+        style: 'currency',
+        currency: currency,
+        maximumFractionDigits: currency === 'KRW' ? 0 : 2,
+      }).format(value);
+    }
+
+    /**
+     * 시가총액 축약 포맷
+     * 예: 1330000000000 → "$1.33T" (1.33조 달러)
+     *
+     * T = Trillion(조), B = Billion(십억), M = Million(백만)
+     */
+    function formatMarketCap(value) {
+      if (value >= 1e12) return '$' + (value / 1e12).toFixed(2) + 'T';
+      if (value >= 1e9) return '$' + (value / 1e9).toFixed(2) + 'B';
+      if (value >= 1e6) return '$' + (value / 1e6).toFixed(2) + 'M';
+      return '$' + value.toLocaleString();
+    }
+
+    /**
+     * 가격 데이터를 가져와서 테이블에 렌더링
+     *
+     * 흐름:
+     * 1. 로딩 UI 표시
+     * 2. Node.js 서버의 /api/prices 호출
+     * 3. 성공 시 테이블 행 생성, 실패 시 에러 UI 표시
+     * 4. 마지막 업데이트 시간 갱신
+     */
+    async function fetchPrices() {
+      document.getElementById('price-loading').classList.remove('hidden');
+      document.getElementById('price-error').classList.add('hidden');
+      document.getElementById('price-table-wrapper').classList.add('hidden');
+
+      // Node.js 서버의 API를 호출 (CORS 프록시 불필요)
+      var data = null;
+      try {
+        var res = await fetch(PRICE_API);
+        if (res.ok) {
+          var json = await res.json();
+          if (json && json.bitcoin && json.bitcoin.usd) data = json;
+        }
+      } catch (e) {
+        // 네트워크 오류 시 data는 null 유지
+      }
+
+      // 실패 시 에러 표시
+      if (!data) {
+        document.getElementById('price-loading').classList.add('hidden');
+        document.getElementById('price-error').classList.remove('hidden');
+        document.getElementById('price-error-message').textContent = '가격 데이터를 가져올 수 없습니다.';
+        return;
+      }
+
+      // 코인 정보 정의 (이름, 심볼, 아이콘 색상)
+      var coins = [
+        { id: 'bitcoin', name: 'Bitcoin', symbol: 'BTC', icon: '🟠' },
+        { id: 'ethereum', name: 'Ethereum', symbol: 'ETH', icon: '🔷' },
+      ];
+
+      // 테이블 본문(tbody) 초기화 후 행 추가
+      var tbody = document.getElementById('price-tbody');
+      tbody.innerHTML = '';
+
+      coins.forEach(function (coin) {
+        var info = data[coin.id];
+        if (!info) return;
+
+        // 24시간 변동률 계산 (▲/▼ 표시로 색맹 대응)
+        var change = info.usd_24h_change;
+        var isPositive = change >= 0;
+        var arrow = isPositive ? '▲' : '▼';
+        var changeText = arrow + ' ' + (isPositive ? '+' : '') + change.toFixed(2) + '%';
+        var changeColor = isPositive
+          ? 'text-emerald-600 dark:text-emerald-400'
+          : 'text-red-600 dark:text-red-400';
+
+        // 이전 가격과 비교하여 플래시 효과 결정
+        var flashClass = '';
+        var prevPrice = previousPrices[coin.id];
+        if (prevPrice !== undefined && prevPrice !== info.usd) {
+          flashClass = info.usd > prevPrice ? 'flash-up' : 'flash-down';
+        }
+        previousPrices[coin.id] = info.usd;
+
+        var tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors' + (flashClass ? ' ' + flashClass : '');
+        tr.innerHTML =
+          '<td class="px-4 sm:px-6 py-4">' +
+            '<div class="flex items-center gap-2">' +
+              '<span class="text-lg">' + coin.icon + '</span>' +
+              '<span class="font-semibold text-slate-800 dark:text-slate-100">' + coin.name + '</span>' +
+              '<span class="text-sm text-slate-400 dark:text-slate-500">(' + coin.symbol + ')</span>' +
+            '</div>' +
+          '</td>' +
+          '<td class="px-4 sm:px-6 py-4 font-medium text-slate-700 dark:text-slate-200">' + formatCurrency(info.usd, 'USD') + '</td>' +
+          '<td class="px-4 sm:px-6 py-4 font-medium text-slate-700 dark:text-slate-200">' + formatCurrency(info.krw, 'KRW') + '</td>' +
+          '<td class="px-4 sm:px-6 py-4 font-semibold ' + changeColor + '">' + changeText + '</td>' +
+          '<td class="px-4 sm:px-6 py-4 text-slate-500 dark:text-slate-400">' + formatMarketCap(info.usd_market_cap) + '</td>';
+        tbody.appendChild(tr);
+      });
+
+      // 로딩 숨기고 테이블 표시
+      document.getElementById('price-loading').classList.add('hidden');
+      document.getElementById('price-table-wrapper').classList.remove('hidden');
+
+      // 마지막 업데이트 시간 갱신
+      document.getElementById('last-updated').textContent = new Date().toLocaleTimeString('ko-KR');
+    }
+
+    // ════════════════════════════════════════════
+    // 파트 3: 블록 정보 조회 (Infura)
+    // ════════════════════════════════════════════
+
+    /**
+     * 최신 이더리움 블록 정보를 서버에서 가져와 화면에 표시
+     */
+    async function fetchBlockInfo() {
+      document.getElementById('block-loading').classList.remove('hidden');
+      document.getElementById('block-error').classList.add('hidden');
+      document.getElementById('block-info-wrapper').classList.add('hidden');
+
+      try {
+        var res = await fetch(API_BASE + '/api/block-info');
+        if (!res.ok) throw new Error('서버 응답 오류');
+        var data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        // 화면에 데이터 표시
+        document.getElementById('block-number').textContent = '#' + data.blockNumber.toLocaleString();
+        document.getElementById('block-tx-count').textContent = data.transactionCount.toLocaleString() + '개';
+        document.getElementById('block-timestamp').textContent = new Date(data.timestamp * 1000).toLocaleString('ko-KR');
+        document.getElementById('block-gas').textContent = data.gasUsed.toLocaleString();
+        document.getElementById('block-hex').textContent = data.blockHex;
+        document.getElementById('block-miner').textContent = data.miner;
+        document.getElementById('block-miner').title = data.miner;
+
+        document.getElementById('block-loading').classList.add('hidden');
+        document.getElementById('block-info-wrapper').classList.remove('hidden');
+      } catch (err) {
+        document.getElementById('block-loading').classList.add('hidden');
+        document.getElementById('block-error').classList.remove('hidden');
+      }
+    }
+
+    // ════════════════════════════════════════════
+    // 파트 4: 트랜잭션 조회
+    // ════════════════════════════════════════════
+
+    /**
+     * 입력된 트랜잭션 해시로 상세 정보 조회
+     */
+    async function searchTransaction() {
+      var hashInput = document.getElementById('tx-hash-input');
+      var hash = hashInput.value.trim();
+
+      if (!hash || !hash.startsWith('0x')) {
+        document.getElementById('tx-result').classList.add('hidden');
+        document.getElementById('tx-error').classList.remove('hidden');
+        document.getElementById('tx-error-message').textContent = '유효한 트랜잭션 해시를 입력해주세요 (0x로 시작)';
+        return;
+      }
+
+      var btn = document.getElementById('btn-search-tx');
+      btn.textContent = '조회 중...';
+      btn.disabled = true;
+      document.getElementById('tx-result').classList.add('hidden');
+      document.getElementById('tx-error').classList.add('hidden');
+
+      try {
+        var res = await fetch(API_BASE + '/api/tx?hash=' + encodeURIComponent(hash));
+        var data = await res.json();
+
+        if (data.error) {
+          document.getElementById('tx-error').classList.remove('hidden');
+          document.getElementById('tx-error-message').textContent = data.error;
+          return;
+        }
+
+        // 상태 표시
+        var isSuccess = data.status === '성공';
+        document.getElementById('tx-status-icon').textContent = isSuccess ? '✅' : '❌';
+        document.getElementById('tx-status-text').textContent = data.status;
+
+        // 네트워크 배지
+        var badge = document.getElementById('tx-network-badge');
+        badge.textContent = data.network || 'Mainnet';
+        if (data.network && data.network.includes('Sepolia')) {
+          badge.className = 'ml-auto rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-500/20 text-amber-300';
+        } else {
+          badge.className = 'ml-auto rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-500/20 text-emerald-300';
+        }
+
+        // 데이터 채우기
+        document.getElementById('tx-hash').textContent = data.hash;
+        document.getElementById('tx-block').textContent = data.blockNumber ? '#' + data.blockNumber.toLocaleString() : '대기중';
+        document.getElementById('tx-from').textContent = data.from;
+        document.getElementById('tx-to').textContent = data.to || '컨트랙트 생성';
+        document.getElementById('tx-value').textContent = data.value;
+        document.getElementById('tx-gas-price').textContent = data.gasPrice;
+        document.getElementById('tx-gas-used').textContent = data.gasUsed;
+
+        document.getElementById('tx-result').classList.remove('hidden');
+      } catch (err) {
+        document.getElementById('tx-error').classList.remove('hidden');
+        document.getElementById('tx-error-message').textContent = '조회 실패: ' + err.message;
+      } finally {
+        btn.textContent = '조회';
+        btn.disabled = false;
+      }
+    }
+
+    // Enter 키로 트랜잭션 조회
+    document.addEventListener('DOMContentLoaded', function () {
+      document.getElementById('tx-hash-input').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') searchTransaction();
+      });
+    });
+
+    // ════════════════════════════════════════════
+    // 파트 5: Sepolia ETH 전송
+    // ════════════════════════════════════════════
+
+    /**
+     * 서버 지갑 정보 로드 (주소, 잔액)
+     */
+    async function loadServerWallet() {
+      try {
+        var res = await fetch(API_BASE + '/api/wallet-info');
+        var data = await res.json();
+        if (data.error) return;
+
+        document.getElementById('server-address').textContent = data.address;
+        document.getElementById('server-balance').textContent = parseFloat(data.balance).toFixed(6) + ' ETH';
+      } catch (err) {
+        document.getElementById('server-address').textContent = '로드 실패';
+      }
+    }
+
+    /**
+     * Sepolia ETH 전송
+     */
+    async function sendETH() {
+      var toAddress = document.getElementById('send-to').value.trim();
+      var amount = document.getElementById('send-amount').value.trim();
+
+      // 입력 검증
+      if (!toAddress || !toAddress.startsWith('0x') || toAddress.length !== 42) {
+        document.getElementById('send-error').classList.remove('hidden');
+        document.getElementById('send-error-message').textContent = '유효한 이더리움 주소를 입력해주세요 (0x로 시작, 42자리)';
+        return;
+      }
+      if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+        document.getElementById('send-error').classList.remove('hidden');
+        document.getElementById('send-error-message').textContent = '유효한 전송 금액을 입력해주세요';
+        return;
+      }
+
+      var btn = document.getElementById('btn-send-eth');
+      btn.textContent = '전송 중...';
+      btn.disabled = true;
+      document.getElementById('send-loading').classList.remove('hidden');
+      document.getElementById('send-result').classList.add('hidden');
+      document.getElementById('send-error').classList.add('hidden');
+
+      try {
+        var res = await fetch(API_BASE + '/api/send-eth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: toAddress, amount: amount }),
+        });
+        var data = await res.json();
+
+        if (data.error) {
+          document.getElementById('send-error').classList.remove('hidden');
+          document.getElementById('send-error-message').textContent = data.error;
+          return;
+        }
+
+        // 성공 결과 표시
+        document.getElementById('send-tx-hash').textContent = data.hash;
+        document.getElementById('send-block').textContent = '#' + data.blockNumber;
+        document.getElementById('send-amount-result').textContent = data.amount;
+        document.getElementById('send-etherscan-link').href = data.sepoliaLink;
+        document.getElementById('send-etherscan-link').textContent = 'Etherscan에서 확인';
+
+        document.getElementById('send-result').classList.remove('hidden');
+        showToast('ETH 전송 성공!');
+
+        // 서버 지갑 잔액 갱신
+        loadServerWallet();
+      } catch (err) {
+        document.getElementById('send-error').classList.remove('hidden');
+        document.getElementById('send-error-message').textContent = '전송 실패: ' + err.message;
+      } finally {
+        btn.textContent = 'ETH 전송';
+        btn.disabled = false;
+        document.getElementById('send-loading').classList.add('hidden');
+      }
+    }
+
+    // ════════════════════════════════════════════
+    // 파트 6: 초기화 (앱 시작점)
+    // ════════════════════════════════════════════
+    //
+    // DOMContentLoaded: HTML 파싱이 완료된 후 실행되는 이벤트.
+    // 이 시점에서 모든 DOM 요소에 안전하게 접근할 수 있다.
+
+    window.addEventListener('DOMContentLoaded', function () {
+      updateThemeIcon();   // 다크모드 아이콘 초기화
+      initWallet();        // MetaMask 감지 + 지갑 초기화
+      fetchPrices();       // 최초 가격 데이터 로드
+      fetchBlockInfo();    // 최초 블록 정보 로드
+      loadServerWallet();  // 서버 지갑 정보 로드
+      setInterval(fetchPrices, REFRESH_INTERVAL);  // 30초마다 자동 갱신
+
+      // 오프라인/온라인 감지
+      var offlineBanner = document.getElementById('offline-banner');
+      window.addEventListener('offline', function () {
+        offlineBanner.classList.remove('hidden');
+      });
+      window.addEventListener('online', function () {
+        offlineBanner.classList.add('hidden');
+        showToast('인터넷 연결이 복구되었습니다');
+        fetchPrices();
+      });
+    });
+
+  </script>
+</body>
+</html>

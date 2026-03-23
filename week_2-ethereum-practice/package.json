@@ -1,0 +1,12 @@
+{
+  "name": "week2-wallet-price-tracker",
+  "version": "1.0.0",
+  "description": "Blockchain Lab #2 — MetaMask 지갑 연결 & 가격 추적 (Node.js 서버)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ethers": "^6.16.0"
+  }
+}

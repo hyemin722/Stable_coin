@@ -1,0 +1,1418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blockchain — MetaMask Wallet Connection & Price Tracker</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%234f46e5'/><text x='50' y='68' font-size='55' text-anchor='middle' fill='white'>🔗</text></svg>">
+
+  <!-- Web Font: Inter (English optimized) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- ethers.js v6 — Library for communicating with the Ethereum blockchain -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+
+  <!-- Tailwind Dark Mode + Font Config -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Inter"', 'system-ui', '-apple-system', 'sans-serif'],
+          },
+        },
+      },
+    }
+  </script>
+
+  <!--
+    Dark mode FOUC (Flash of Unstyled Content) prevention script
+    Must be in <head> so it runs before the page renders
+  -->
+  <script>
+    (function () {
+      var saved = localStorage.getItem('theme');
+      if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
+
+  <style>
+    /* Fade-in animation */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in {
+      animation: fadeInUp 0.5s ease-out both;
+    }
+    .animate-fade-in-delay-1 { animation-delay: 0.1s; }
+    .animate-fade-in-delay-2 { animation-delay: 0.2s; }
+    .animate-fade-in-delay-3 { animation-delay: 0.3s; }
+
+    /* Connection status indicator blink */
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    .animate-blink { animation: blink 2s ease-in-out infinite; }
+
+    /* Tip button shimmer */
+    @keyframes shimmer {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+      50% { box-shadow: 0 0 12px 4px rgba(251, 191, 36, 0.55); }
+    }
+    .animate-shimmer { animation: shimmer 2.5s ease-in-out infinite; }
+
+    /* <details> arrow customization */
+    details > summary { cursor: pointer; list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary::marker { display: none; }
+    details[open] > summary .chevron { transform: rotate(90deg); }
+    .chevron { transition: transform 0.2s ease; display: inline-block; }
+
+    /* Modal popup animation */
+    @keyframes modalBackdropIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes modalContentIn {
+      from { opacity: 0; transform: scale(0.85) translateY(20px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    @keyframes modalBackdropOut {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+    @keyframes modalContentOut {
+      from { opacity: 1; transform: scale(1) translateY(0); }
+      to { opacity: 0; transform: scale(0.85) translateY(20px); }
+    }
+    .modal-backdrop-in { animation: modalBackdropIn 0.25s ease-out both; }
+    .modal-content-in { animation: modalContentIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+    .modal-backdrop-out { animation: modalBackdropOut 0.2s ease-in both; }
+    .modal-content-out { animation: modalContentOut 0.2s ease-in both; }
+
+    /* Custom scrollbar (dark mode aware) */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+    .dark ::-webkit-scrollbar-thumb { background: #475569; }
+
+    /* Price change flash effect */
+    @keyframes flashGreen {
+      0% { background-color: rgba(16, 185, 129, 0.25); }
+      100% { background-color: transparent; }
+    }
+    @keyframes flashRed {
+      0% { background-color: rgba(239, 68, 68, 0.25); }
+      100% { background-color: transparent; }
+    }
+    .flash-up { animation: flashGreen 1s ease-out; }
+    .flash-down { animation: flashRed 1s ease-out; }
+
+    /* Toast notification */
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(16px) scale(0.95); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .toast-enter { animation: toastIn 0.3s ease-out; }
+  </style>
+</head>
+
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 min-h-screen font-sans transition-colors duration-300">
+
+  <!-- Header: Gradient background + Project title + Dark mode toggle -->
+  <header class="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 dark:from-indigo-900 dark:via-purple-900 dark:to-indigo-950 text-white shadow-lg">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 py-5 flex flex-wrap gap-y-2 items-center justify-between">
+      <div>
+        <h1 class="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
+          <span>Blockchain Lab #2</span>
+        </h1>
+        <p class="text-indigo-200 dark:text-indigo-300 text-sm mt-0.5">MetaMask Wallet Connection + Real-time Price Tracker</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Language toggle button -->
+        <a href="index.html"
+           class="h-10 flex items-center gap-1.5 rounded-full bg-white/15 hover:bg-white/25 transition-colors px-3 text-sm font-medium"
+           title="한국어로 전환" aria-label="한국어로 전환">
+          🌐 KO
+        </a>
+        <!-- Dark mode toggle button -->
+        <button id="theme-toggle" onclick="toggleTheme()"
+                class="w-10 h-10 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/25 transition-colors"
+                title="Toggle dark mode" aria-label="Toggle dark mode">
+          <span id="theme-icon" class="text-lg">🌙</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main content area -->
+  <main class="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+
+    <!-- Offline detection banner -->
+    <div id="offline-banner" class="hidden rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 flex items-center gap-3" role="alert">
+      <span class="text-xl">📡</span>
+      <p class="text-sm font-medium text-red-700 dark:text-red-400">You are offline. Prices will refresh automatically when your connection is restored.</p>
+    </div>
+
+    <!-- Section 1: MetaMask Wallet Connection Card -->
+    <section id="wallet-card" class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 p-5 sm:p-6 animate-fade-in transition-colors duration-300">
+
+      <!-- State: Loading (Detecting MetaMask) -->
+      <div id="wallet-loading" class="flex items-center gap-3">
+        <span class="text-2xl">🦊</span>
+        <span class="font-medium text-slate-500 dark:text-slate-400">Checking for MetaMask wallet...</span>
+        <div class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500"></div>
+      </div>
+
+      <!-- State: MetaMask not installed -->
+      <div id="wallet-not-installed" class="hidden">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">🦊</span>
+            <div>
+              <p class="font-semibold text-amber-700 dark:text-amber-400">MetaMask was not detected</p>
+              <a href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer"
+                 class="text-sm text-amber-600 dark:text-amber-500 hover:underline">
+                Install MetaMask →
+              </a>
+            </div>
+          </div>
+          <button onclick="retryDetection()"
+                  class="rounded-lg border border-amber-300 dark:border-amber-700 px-4 py-1.5 text-sm font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors whitespace-nowrap ml-3">
+            Retry
+          </button>
+        </div>
+      </div>
+
+      <!-- State: Disconnected (MetaMask installed, not connected) -->
+      <div id="wallet-disconnected" class="hidden">
+        <div class="flex flex-wrap gap-y-2 items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">🦊</span>
+            <span class="font-semibold text-slate-700 dark:text-slate-200">MetaMask Wallet</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="openTipModal()"
+                    class="rounded-lg border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-400 transition-colors animate-shimmer">
+              💡 Beginner Tips
+            </button>
+            <button id="btn-connect" onclick="connectWallet()"
+                    class="rounded-lg bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 px-5 py-2 text-sm font-medium text-white transition-colors shadow-sm">
+              Connect Wallet
+            </button>
+          </div>
+        </div>
+        <p id="wallet-error-disconnected" class="hidden mt-3 text-sm text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded-lg px-3 py-2"></p>
+      </div>
+
+      <!-- State: Connected -->
+      <div id="wallet-connected" class="hidden">
+        <!-- Header: Status badge + Disconnect -->
+        <div class="flex flex-wrap gap-y-2 items-center justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">🦊</span>
+            <span class="font-semibold text-slate-700 dark:text-slate-200">MetaMask Wallet</span>
+            <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-blink"></span>
+              Connected
+            </span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="openTipModal()"
+                    class="rounded-lg border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 px-3 py-1.5 text-sm font-medium text-amber-700 dark:text-amber-400 transition-colors animate-shimmer">
+              💡 Tips
+            </button>
+            <button onclick="disconnectWallet()"
+                    class="rounded-lg border border-slate-200 dark:border-slate-600 px-3 py-1.5 text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+              Disconnect
+            </button>
+          </div>
+        </div>
+
+        <!-- Wallet info grid: Address / Balance / Network -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+          <!-- Address -->
+          <div class="rounded-xl bg-slate-50 dark:bg-slate-700/50 p-3.5 group">
+            <p class="text-slate-400 dark:text-slate-500 text-xs mb-1.5 font-medium">Address</p>
+            <div class="flex items-center gap-2">
+              <p id="display-address" class="font-mono font-semibold text-slate-700 dark:text-slate-200" title="">-</p>
+              <button onclick="copyAddress()" title="Copy address" aria-label="Copy wallet address"
+                      class="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 text-xs">
+                📋
+              </button>
+            </div>
+          </div>
+          <!-- Balance -->
+          <div class="rounded-xl bg-slate-50 dark:bg-slate-700/50 p-3.5">
+            <p class="text-slate-400 dark:text-slate-500 text-xs mb-1.5 font-medium">Balance</p>
+            <p id="display-balance" class="font-semibold text-slate-700 dark:text-slate-200">-</p>
+          </div>
+          <!-- Network -->
+          <div class="rounded-xl bg-slate-50 dark:bg-slate-700/50 p-3.5">
+            <p class="text-slate-400 dark:text-slate-500 text-xs mb-1.5 font-medium">Network</p>
+            <div class="flex items-center gap-2">
+              <span id="display-network-dot" class="h-2 w-2 rounded-full bg-slate-300"></span>
+              <p id="display-network" class="font-semibold text-slate-700 dark:text-slate-200">-</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sepolia switch banner -->
+        <div id="sepolia-warning" class="hidden mt-4 flex flex-wrap gap-y-2 items-center justify-between rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3.5">
+          <div class="flex items-center gap-2">
+            <span class="text-amber-500">⚠️</span>
+            <p class="text-sm font-medium text-amber-700 dark:text-amber-400">Please switch to the Sepolia testnet</p>
+          </div>
+          <button onclick="switchToSepolia()"
+                  class="rounded-lg bg-amber-500 hover:bg-amber-600 px-4 py-1.5 text-sm font-medium text-white transition-colors shadow-sm whitespace-nowrap ml-3">
+            Switch to Sepolia
+          </button>
+        </div>
+
+        <p id="wallet-error-connected" class="hidden mt-3 text-sm text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded-lg px-3 py-2"></p>
+      </div>
+    </section>
+
+    <!-- Section 2: Real-time Price Tracker Table -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 p-5 sm:p-8 animate-fade-in animate-fade-in-delay-1 transition-colors duration-300">
+      <h2 class="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-slate-100 mb-1">Real-time Price Tracker</h2>
+      <p class="text-slate-500 dark:text-slate-400 text-sm sm:text-base mb-6">Bitcoin & Ethereum price tracking via CoinGecko API</p>
+
+      <!-- Loading spinner -->
+      <div id="price-loading" class="flex flex-col items-center justify-center py-16 gap-3">
+        <div class="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 dark:border-slate-600 border-t-indigo-500"></div>
+        <span class="text-slate-400 dark:text-slate-500 text-sm">Loading price data...</span>
+      </div>
+
+      <!-- Error display -->
+      <div id="price-error" class="hidden rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-8 text-center">
+        <p class="text-3xl mb-3">😵</p>
+        <p id="price-error-message" class="text-red-600 dark:text-red-400 font-medium mb-4"></p>
+        <button onclick="fetchPrices()"
+                class="rounded-lg bg-red-600 hover:bg-red-700 px-5 py-2 text-sm font-medium text-white transition-colors shadow-sm">
+          Retry
+        </button>
+      </div>
+
+      <!-- Price table -->
+      <div id="price-table-wrapper" class="hidden">
+        <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-600">
+          <table class="w-full text-left">
+            <thead>
+              <tr class="bg-slate-800 dark:bg-slate-900 text-white text-sm">
+                <th class="px-4 sm:px-6 py-3.5 font-semibold">Coin</th>
+                <th class="px-4 sm:px-6 py-3.5 font-semibold">USD Price</th>
+                <th class="px-4 sm:px-6 py-3.5 font-semibold">KRW Price</th>
+                <th class="px-4 sm:px-6 py-3.5 font-semibold">24h Change</th>
+                <th class="px-4 sm:px-6 py-3.5 font-semibold">Market Cap</th>
+              </tr>
+            </thead>
+            <tbody id="price-tbody" class="divide-y divide-slate-100 dark:divide-slate-700" aria-live="polite"></tbody>
+          </table>
+        </div>
+
+        <!-- Bottom bar: Last updated + Auto refresh + Refresh button -->
+        <div class="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm text-slate-400 dark:text-slate-500">
+          <div class="flex items-center gap-3 flex-wrap">
+            <span>Last updated: <span id="last-updated" class="font-medium text-slate-500 dark:text-slate-400">-</span></span>
+            <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-blink"></span>
+              Auto-refresh every 30s
+            </span>
+          </div>
+          <button onclick="fetchPrices()"
+                  class="rounded-lg border border-slate-200 dark:border-slate-600 px-4 py-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-sm">
+            Refresh
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: Ethereum Block Info (Infura) -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 p-5 sm:p-8 animate-fade-in animate-fade-in-delay-1 transition-colors duration-300">
+      <h2 class="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-slate-100 mb-1">Ethereum Block Info</h2>
+      <p class="text-slate-500 dark:text-slate-400 text-sm sm:text-base mb-6">Query latest block data via Infura JSON-RPC</p>
+
+      <!-- Loading -->
+      <div id="block-loading" class="flex flex-col items-center justify-center py-12 gap-3">
+        <div class="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 dark:border-slate-600 border-t-indigo-500"></div>
+        <span class="text-slate-400 dark:text-slate-500 text-sm">Loading block data...</span>
+      </div>
+
+      <!-- Error -->
+      <div id="block-error" class="hidden rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-8 text-center">
+        <p class="text-3xl mb-3">😵</p>
+        <p class="text-red-600 dark:text-red-400 font-medium mb-4">Failed to fetch block info.</p>
+        <button onclick="fetchBlockInfo()"
+                class="rounded-lg bg-red-600 hover:bg-red-700 px-5 py-2 text-sm font-medium text-white transition-colors shadow-sm">
+          Retry
+        </button>
+      </div>
+
+      <!-- Block info cards -->
+      <div id="block-info-wrapper" class="hidden">
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div class="rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 p-4">
+            <p class="text-indigo-400 dark:text-indigo-500 text-xs font-medium mb-1">Block Number</p>
+            <p id="block-number" class="text-lg font-bold text-indigo-700 dark:text-indigo-300">#-</p>
+          </div>
+          <div class="rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4">
+            <p class="text-emerald-400 dark:text-emerald-500 text-xs font-medium mb-1">Transactions</p>
+            <p id="block-tx-count" class="text-lg font-bold text-emerald-700 dark:text-emerald-300">-</p>
+          </div>
+          <div class="rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 p-4">
+            <p class="text-purple-400 dark:text-purple-500 text-xs font-medium mb-1">Block Timestamp</p>
+            <p id="block-timestamp" class="text-sm font-bold text-purple-700 dark:text-purple-300">-</p>
+          </div>
+          <div class="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-4">
+            <p class="text-amber-400 dark:text-amber-500 text-xs font-medium mb-1">Gas Used</p>
+            <p id="block-gas" class="text-sm font-bold text-amber-700 dark:text-amber-300">-</p>
+          </div>
+          <div class="rounded-xl bg-slate-100 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 p-4">
+            <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">Block (Hex)</p>
+            <p id="block-hex" class="text-sm font-mono font-bold text-slate-600 dark:text-slate-300">-</p>
+          </div>
+          <div class="rounded-xl bg-slate-100 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 p-4">
+            <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">Validator (Miner)</p>
+            <p id="block-miner" class="text-sm font-mono font-bold text-slate-600 dark:text-slate-300 truncate" title="">-</p>
+          </div>
+        </div>
+
+        <div class="mt-4 flex items-center justify-between text-sm text-slate-400 dark:text-slate-500">
+          <span>Infura Mainnet JSON-RPC</span>
+          <button onclick="fetchBlockInfo()"
+                  class="rounded-lg border border-slate-200 dark:border-slate-600 px-4 py-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-sm">
+            Refresh
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: Transaction Lookup -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 p-5 sm:p-8 animate-fade-in animate-fade-in-delay-2 transition-colors duration-300">
+      <h2 class="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-slate-100 mb-1">Transaction Lookup</h2>
+      <p class="text-slate-500 dark:text-slate-400 text-sm sm:text-base mb-6">Enter a transaction hash to view details (Mainnet + Sepolia)</p>
+
+      <div class="flex flex-col sm:flex-row gap-3 mb-4">
+        <input id="tx-hash-input" type="text" placeholder="Enter transaction hash starting with 0x..."
+               class="flex-1 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-4 py-3 text-sm font-mono text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors">
+        <button id="btn-search-tx" onclick="searchTransaction()"
+                class="rounded-xl bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 px-6 py-3 text-sm font-medium text-white transition-colors shadow-sm whitespace-nowrap">
+          Search
+        </button>
+      </div>
+
+      <div id="tx-result" class="hidden">
+        <div class="rounded-xl border border-slate-200 dark:border-slate-600 overflow-hidden">
+          <div id="tx-result-header" class="bg-slate-800 dark:bg-slate-900 px-4 sm:px-6 py-3 flex items-center gap-2">
+            <span id="tx-status-icon" class="text-lg"></span>
+            <span id="tx-status-text" class="text-white font-semibold text-sm"></span>
+            <span id="tx-network-badge" class="ml-auto rounded-full px-2.5 py-0.5 text-xs font-medium"></span>
+          </div>
+          <div class="divide-y divide-slate-100 dark:divide-slate-700">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-px bg-slate-100 dark:bg-slate-700">
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">TX Hash</p>
+                <p id="tx-hash" class="text-sm font-mono text-slate-700 dark:text-slate-200 break-all">-</p>
+              </div>
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">Block Number</p>
+                <p id="tx-block" class="text-sm font-semibold text-slate-700 dark:text-slate-200">-</p>
+              </div>
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">From</p>
+                <p id="tx-from" class="text-sm font-mono text-slate-700 dark:text-slate-200 break-all">-</p>
+              </div>
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">To</p>
+                <p id="tx-to" class="text-sm font-mono text-slate-700 dark:text-slate-200 break-all">-</p>
+              </div>
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">Value</p>
+                <p id="tx-value" class="text-sm font-bold text-indigo-600 dark:text-indigo-400">-</p>
+              </div>
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">Gas Price</p>
+                <p id="tx-gas-price" class="text-sm font-semibold text-slate-700 dark:text-slate-200">-</p>
+              </div>
+              <div class="bg-white dark:bg-slate-800 p-4">
+                <p class="text-slate-400 dark:text-slate-500 text-xs font-medium mb-1">Gas Used</p>
+                <p id="tx-gas-used" class="text-sm font-semibold text-slate-700 dark:text-slate-200">-</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="tx-error" class="hidden rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 text-center">
+        <p id="tx-error-message" class="text-red-600 dark:text-red-400 font-medium text-sm"></p>
+      </div>
+    </section>
+
+    <!-- Section 5: Sepolia ETH Transfer -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-indigo-200 dark:border-indigo-800/50 p-5 sm:p-8 animate-fade-in animate-fade-in-delay-2 transition-colors duration-300">
+      <h2 class="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-slate-100 mb-1">Send Sepolia ETH</h2>
+      <p class="text-slate-500 dark:text-slate-400 text-sm sm:text-base mb-6">Send Sepolia testnet ETH from the server wallet</p>
+
+      <div id="server-wallet-info" class="rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 p-4 mb-6">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p class="text-indigo-400 dark:text-indigo-500 text-xs font-medium mb-1">Server Wallet (Sepolia)</p>
+            <p id="server-address" class="text-sm font-mono font-semibold text-indigo-700 dark:text-indigo-300">Loading...</p>
+          </div>
+          <div class="text-right">
+            <p class="text-indigo-400 dark:text-indigo-500 text-xs font-medium mb-1">Balance</p>
+            <p id="server-balance" class="text-lg font-bold text-indigo-700 dark:text-indigo-300">-</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label for="send-to" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Recipient Address</label>
+          <input id="send-to" type="text" placeholder="Ethereum address starting with 0x..."
+                 class="w-full rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-4 py-3 text-sm font-mono text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors">
+        </div>
+        <div>
+          <label for="send-amount" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Amount (ETH)</label>
+          <input id="send-amount" type="text" placeholder="e.g., 0.001" value="0.001"
+                 class="w-full rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-4 py-3 text-sm font-mono text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors">
+        </div>
+        <button id="btn-send-eth" onclick="sendETH()"
+                class="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 px-6 py-3.5 text-sm font-semibold text-white transition-colors shadow-sm">
+          Send ETH
+        </button>
+      </div>
+
+      <div id="send-loading" class="hidden mt-4 flex items-center gap-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-4">
+        <div class="h-5 w-5 animate-spin rounded-full border-2 border-amber-300 border-t-amber-600"></div>
+        <p class="text-sm font-medium text-amber-700 dark:text-amber-400">Sending transaction... Waiting for block confirmation.</p>
+      </div>
+
+      <div id="send-result" class="hidden mt-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-lg">&#10003;</span>
+          <p class="font-semibold text-emerald-700 dark:text-emerald-300">Transfer Successful!</p>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div>
+            <p class="text-emerald-500 dark:text-emerald-600 text-xs font-medium mb-0.5">TX Hash</p>
+            <p id="send-tx-hash" class="font-mono text-emerald-700 dark:text-emerald-300 break-all text-xs">-</p>
+          </div>
+          <div>
+            <p class="text-emerald-500 dark:text-emerald-600 text-xs font-medium mb-0.5">Block Number</p>
+            <p id="send-block" class="font-semibold text-emerald-700 dark:text-emerald-300">-</p>
+          </div>
+          <div>
+            <p class="text-emerald-500 dark:text-emerald-600 text-xs font-medium mb-0.5">Amount</p>
+            <p id="send-amount-result" class="font-semibold text-emerald-700 dark:text-emerald-300">-</p>
+          </div>
+          <div>
+            <p class="text-emerald-500 dark:text-emerald-600 text-xs font-medium mb-0.5">Etherscan</p>
+            <a id="send-etherscan-link" href="#" target="_blank" rel="noopener noreferrer"
+               class="text-emerald-600 dark:text-emerald-400 underline text-xs break-all">View on Etherscan</a>
+          </div>
+        </div>
+      </div>
+
+      <div id="send-error" class="hidden mt-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 text-center">
+        <p id="send-error-message" class="text-red-600 dark:text-red-400 font-medium text-sm"></p>
+      </div>
+    </section>
+
+    <!-- Section 6: Cautions & Troubleshooting -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-red-200 dark:border-red-800/50 p-5 sm:p-6 animate-fade-in animate-fade-in-delay-2 transition-colors duration-300">
+      <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-1 flex items-center gap-2">
+        <span class="text-red-500">&#9888;</span> Cautions & Troubleshooting
+      </h2>
+      <p class="text-slate-500 dark:text-slate-400 text-sm mb-4">Common errors and their solutions, listed in order.</p>
+
+      <div class="space-y-3">
+
+        <!-- Error 1: file:// protocol -->
+        <details class="group rounded-xl border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-red-100/50 dark:hover:bg-red-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-red-400">&#9654;</span>
+              <h3 class="font-semibold text-red-800 dark:text-red-300">1. MetaMask doesn't work when opening the HTML file directly</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-red-700 dark:text-red-300 space-y-2 border-t border-red-200 dark:border-red-800 pt-3">
+            <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3">
+              <p class="font-medium text-red-600 dark:text-red-400 text-xs mb-1">Symptom</p>
+              <p>When you double-click index.html, the URL starts with <code class="bg-red-200 dark:bg-red-800 px-1 rounded text-xs">file:///C:/...</code> and MetaMask shows as "not detected".</p>
+            </div>
+            <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3">
+              <p class="font-medium text-red-600 dark:text-red-400 text-xs mb-1">Cause</p>
+              <p>For security reasons, MetaMask does not inject <code class="bg-red-200 dark:bg-red-800 px-1 rounded text-xs">window.ethereum</code> on the <code class="bg-red-200 dark:bg-red-800 px-1 rounded text-xs">file://</code> protocol. You must access it via <code class="bg-red-200 dark:bg-red-800 px-1 rounded text-xs">http://</code> or <code class="bg-red-200 dark:bg-red-800 px-1 rounded text-xs">https://</code>.</p>
+            </div>
+            <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">Solution</p>
+              <p><strong>Double-click start.bat</strong> to run a local server (<code class="bg-emerald-200 dark:bg-emerald-800 px-1 rounded text-xs">http://localhost:5500</code>).</p>
+            </div>
+          </div>
+        </details>
+
+        <!-- Error 2: MetaMask detection failure -->
+        <details class="group rounded-xl border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-red-100/50 dark:hover:bg-red-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-red-400">&#9654;</span>
+              <h3 class="font-semibold text-red-800 dark:text-red-300">2. "MetaMask was not detected" message</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-red-700 dark:text-red-300 space-y-2 border-t border-red-200 dark:border-red-800 pt-3">
+            <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3">
+              <p class="font-medium text-red-600 dark:text-red-400 text-xs mb-1">Symptom</p>
+              <p>Even when accessing via localhost, "MetaMask was not detected" is displayed.</p>
+            </div>
+            <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3">
+              <p class="font-medium text-red-600 dark:text-red-400 text-xs mb-1">Cause</p>
+              <p>The MetaMask extension may be <strong>disabled</strong> or <strong>locked</strong> (password not entered), which prevents <code class="bg-red-200 dark:bg-red-800 px-1 rounded text-xs">window.ethereum</code> from being injected.</p>
+            </div>
+            <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">Solution (3 steps)</p>
+              <ol class="list-decimal list-inside space-y-1 mt-1">
+                <li>Check that MetaMask is <strong>enabled</strong> at <code class="bg-emerald-200 dark:bg-emerald-800 px-1 rounded text-xs">chrome://extensions</code></li>
+                <li>Click the <strong>🦊 icon</strong> in the browser toolbar to <strong>unlock</strong> MetaMask (enter password)</li>
+                <li><strong>Refresh the page (F5)</strong> or click the "Retry" button</li>
+              </ol>
+            </div>
+          </div>
+        </details>
+
+        <!-- Error 3: Duplicate connection request -->
+        <details class="group rounded-xl border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-red-100/50 dark:hover:bg-red-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-red-400">&#9654;</span>
+              <h3 class="font-semibold text-red-800 dark:text-red-300">3. Nothing happens after clicking "Connect Wallet"</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-red-700 dark:text-red-300 space-y-2 border-t border-red-200 dark:border-red-800 pt-3">
+            <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3">
+              <p class="font-medium text-red-600 dark:text-red-400 text-xs mb-1">Symptom</p>
+              <p>After clicking "Connect Wallet", the MetaMask popup doesn't appear, or it gets stuck at "Connecting...".</p>
+            </div>
+            <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3">
+              <p class="font-medium text-red-600 dark:text-red-400 text-xs mb-1">Cause</p>
+              <p>A previous connection popup may still be <strong>pending</strong>. MetaMask processes only one connection request at a time, so new requests are ignored until the previous one is handled.</p>
+            </div>
+            <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">Solution</p>
+              <p>Click the <strong>🦊 MetaMask icon</strong> in the browser toolbar to see the pending popup. Choose "Connect" or "Reject" from there.</p>
+            </div>
+          </div>
+        </details>
+
+        <!-- Error 4: Sepolia network -->
+        <details class="group rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-amber-400">&#9654;</span>
+              <h3 class="font-semibold text-amber-800 dark:text-amber-300">4. "Please switch to the Sepolia testnet" warning</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-amber-700 dark:text-amber-300 space-y-2 border-t border-amber-200 dark:border-amber-800 pt-3">
+            <div class="rounded-lg bg-amber-100 dark:bg-amber-900/40 p-3">
+              <p class="font-medium text-amber-600 dark:text-amber-400 text-xs mb-1">Symptom</p>
+              <p>Wallet connection succeeded but a yellow warning banner is displayed.</p>
+            </div>
+            <div class="rounded-lg bg-amber-100 dark:bg-amber-900/40 p-3">
+              <p class="font-medium text-amber-600 dark:text-amber-400 text-xs mb-1">Cause</p>
+              <p>MetaMask is currently connected to a different network such as Ethereum Mainnet. This app is designed to work on the <strong>Sepolia testnet</strong> (Chain ID: 11155111).</p>
+            </div>
+            <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">Solution</p>
+              <p>Click the <strong>"Switch to Sepolia"</strong> button next to the warning banner to automatically switch the network.</p>
+            </div>
+          </div>
+        </details>
+
+        <!-- Error 5: Price loading failure -->
+        <details class="group rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-amber-400">&#9654;</span>
+              <h3 class="font-semibold text-amber-800 dark:text-amber-300">5. Unable to fetch price data</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-amber-700 dark:text-amber-300 space-y-2 border-t border-amber-200 dark:border-amber-800 pt-3">
+            <div class="rounded-lg bg-amber-100 dark:bg-amber-900/40 p-3">
+              <p class="font-medium text-amber-600 dark:text-amber-400 text-xs mb-1">Symptom</p>
+              <p>"Unable to fetch price data" error is displayed instead of the price table.</p>
+            </div>
+            <div class="rounded-lg bg-amber-100 dark:bg-amber-900/40 p-3">
+              <p class="font-medium text-amber-600 dark:text-amber-400 text-xs mb-1">Cause</p>
+              <p>Unstable internet connection, or you may have hit CoinGecko API's free rate limit (10-30 requests per minute). CORS policy may also block direct calls.</p>
+            </div>
+            <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">Solution</p>
+              <p>Check your internet connection and click the <strong>"Retry"</strong> button. The app will automatically try 3 fallback routes (CORS proxies) sequentially.</p>
+            </div>
+          </div>
+        </details>
+
+      </div>
+    </section>
+
+    <!-- Section 4: Week 2 Key Concepts (Collapsible cards) -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl shadow-md dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 p-5 sm:p-6 animate-fade-in animate-fade-in-delay-2 transition-colors duration-300">
+      <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Week 2 Key Concepts</h2>
+
+      <div class="space-y-3">
+        <!-- Concept 1: EOA vs Smart Contract Account -->
+        <details class="group rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-indigo-100/50 dark:hover:bg-indigo-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-indigo-400">▶</span>
+              <h3 class="font-semibold text-indigo-800 dark:text-indigo-300">EOA vs Smart Contract Account</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-indigo-700 dark:text-indigo-300 space-y-2 border-t border-indigo-200 dark:border-indigo-800 pt-3">
+            <p><strong>EOA</strong> (Externally Owned Account): A regular wallet controlled by a private key. This is what MetaMask creates.</p>
+            <p><strong>CA</strong> (Contract Account): An account controlled by code. Created when a smart contract is deployed.</p>
+            <div class="mt-3 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 p-3">
+              <p class="font-medium text-indigo-600 dark:text-indigo-400 text-xs mb-1">Analogy</p>
+              <p>EOA = A personal bank account (withdraw with your signature). CA = An automated rules account (executes automatically when conditions are met).</p>
+            </div>
+            <div class="rounded-lg bg-indigo-100 dark:bg-indigo-900/40 p-3">
+              <p class="font-medium text-indigo-600 dark:text-indigo-400 text-xs mb-1">Technical Detail</p>
+              <p>EOAs are controlled by ECDSA (secp256k1) private-public key pairs. CAs store EVM bytecode and their code only executes when called by message calls from other accounts.</p>
+            </div>
+          </div>
+        </details>
+
+        <!-- Concept 2: Seed Phrase -->
+        <details class="group rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-emerald-400">▶</span>
+              <h3 class="font-semibold text-emerald-800 dark:text-emerald-300">Seed Phrase</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-emerald-700 dark:text-emerald-300 space-y-2 border-t border-emerald-200 dark:border-emerald-800 pt-3">
+            <p>A master key consisting of 12-24 English words. With this alone, you can fully recover your wallet.</p>
+            <p><strong class="text-red-600 dark:text-red-400">Never share it with anyone</strong> — seed phrase = ownership of all your assets.</p>
+            <div class="mt-3 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">Analogy</p>
+              <p>Seed phrase = Master key to a safe. If you copy and give it to someone, they can open your safe.</p>
+            </div>
+            <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+              <p class="font-medium text-emerald-600 dark:text-emerald-400 text-xs mb-1">Technical Detail</p>
+              <p>A mnemonic word list generated from 128-256 bit entropy per the BIP-39 standard. It serves as a master seed that can derive infinite private keys via BIP-32/44 derivation paths.</p>
+            </div>
+          </div>
+        </details>
+
+        <!-- Concept 3: Sepolia Testnet -->
+        <details class="group rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 overflow-hidden">
+          <summary class="flex items-center justify-between px-4 py-3 hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors">
+            <div class="flex items-center gap-2">
+              <span class="chevron text-amber-400">▶</span>
+              <h3 class="font-semibold text-amber-800 dark:text-amber-300">Sepolia Testnet</h3>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 text-sm text-amber-700 dark:text-amber-300 space-y-2 border-t border-amber-200 dark:border-amber-800 pt-3">
+            <p>A practice network that works identically to the Ethereum mainnet, but ETH is free.</p>
+            <p>Chain ID: <code class="bg-amber-200 dark:bg-amber-800 px-1.5 py-0.5 rounded text-xs font-mono">11155111</code> (0xaa36a7)</p>
+            <div class="mt-3 rounded-lg bg-amber-100 dark:bg-amber-900/40 p-3">
+              <p class="font-medium text-amber-600 dark:text-amber-400 text-xs mb-1">Analogy</p>
+              <p>Testnet = Board game money. The rules are the same as real ones, but there's no actual value. You won't lose money even if you make mistakes.</p>
+            </div>
+            <div class="rounded-lg bg-amber-100 dark:bg-amber-900/40 p-3">
+              <p class="font-medium text-amber-600 dark:text-amber-400 text-xs mb-1">Technical Detail</p>
+              <p>Sepolia is Ethereum's PoS (Proof of Stake) based test network. Identified by EIP-155 Chain ID (11155111), it prevents replay attacks during transaction signing.</p>
+            </div>
+          </div>
+        </details>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Beginner Tips Modal (Overlay popup) -->
+  <div id="tip-modal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="tip-modal-title">
+    <!-- Backdrop overlay (closes on click) -->
+    <div id="tip-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeTipModal()"></div>
+
+    <!-- Modal body -->
+    <div class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+      <div id="tip-content" class="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl dark:shadow-slate-900/80 border border-slate-200 dark:border-slate-700 w-full max-w-2xl max-h-[85vh] overflow-y-auto pointer-events-auto">
+
+        <!-- Modal header -->
+        <div class="sticky top-0 bg-gradient-to-r from-amber-500 to-orange-500 dark:from-amber-600 dark:to-orange-600 rounded-t-2xl px-6 py-5 flex items-center justify-between">
+          <div>
+            <h2 id="tip-modal-title" class="text-xl font-bold text-white flex items-center gap-2">
+              <span class="text-2xl">💡</span> Beginner's Getting Started Guide
+            </h2>
+            <p class="text-amber-100 text-sm mt-0.5">Practical tips for first-time users</p>
+          </div>
+          <button onclick="closeTipModal()"
+                  class="w-9 h-9 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors text-white text-lg"
+                  aria-label="Close">
+            &#10005;
+          </button>
+        </div>
+
+        <!-- Modal content -->
+        <div class="p-6 space-y-5">
+
+          <!-- Tip 1: Starting amount -->
+          <div class="rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-5">
+            <h3 class="font-bold text-emerald-800 dark:text-emerald-300 text-base mb-3 flex items-center gap-2">
+              <span class="w-7 h-7 rounded-full bg-emerald-500 text-white text-sm flex items-center justify-center font-bold">1</span>
+              How much should I start with?
+            </h3>
+            <div class="text-sm text-emerald-700 dark:text-emerald-300 space-y-2">
+              <p><strong>The testnet (Sepolia) is free</strong>. No real money involved!</p>
+              <div class="rounded-lg bg-emerald-100 dark:bg-emerald-900/40 p-3">
+                <p class="font-semibold mb-1">How to get test ETH</p>
+                <ol class="list-decimal list-inside space-y-1">
+                  <li>Go to <a href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia" target="_blank" rel="noopener noreferrer" class="text-emerald-600 dark:text-emerald-400 underline">Google Cloud Faucet</a></li>
+                  <li>Paste your MetaMask wallet address</li>
+                  <li>Click "Receive" → Get <strong>0.05 Sepolia ETH</strong> for free</li>
+                </ol>
+              </div>
+              <p class="text-emerald-500 dark:text-emerald-400 italic">0.05 ETH is enough to run dozens of test transactions.</p>
+            </div>
+          </div>
+
+          <!-- Tip 2: Recommended coins -->
+          <div class="rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 p-5">
+            <h3 class="font-bold text-indigo-800 dark:text-indigo-300 text-base mb-3 flex items-center gap-2">
+              <span class="w-7 h-7 rounded-full bg-indigo-500 text-white text-sm flex items-center justify-center font-bold">2</span>
+              Which coins should I look at first?
+            </h3>
+            <div class="text-sm text-indigo-700 dark:text-indigo-300 space-y-3">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="rounded-lg bg-indigo-100 dark:bg-indigo-900/40 p-3">
+                  <p class="font-bold text-base mb-1">🟠 Bitcoin (BTC)</p>
+                  <p>#1 market cap, known as "digital gold". The most stable and longest-running cryptocurrency.</p>
+                  <p class="text-indigo-500 dark:text-indigo-400 text-xs mt-1">Beginner recommendation: ★★★★★</p>
+                </div>
+                <div class="rounded-lg bg-indigo-100 dark:bg-indigo-900/40 p-3">
+                  <p class="font-bold text-base mb-1">🔷 Ethereum (ETH)</p>
+                  <p>#2 market cap, the pioneer of smart contracts. Foundation for DeFi, NFTs, and more.</p>
+                  <p class="text-indigo-500 dark:text-indigo-400 text-xs mt-1">Beginner recommendation: ★★★★★</p>
+                </div>
+              </div>
+              <p class="text-indigo-500 dark:text-indigo-400 italic">Understanding just BTC and ETH is enough to start. Learn about altcoins after you understand these two.</p>
+            </div>
+          </div>
+
+          <!-- Tip 3: MetaMask initial setup -->
+          <div class="rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 p-5">
+            <h3 class="font-bold text-purple-800 dark:text-purple-300 text-base mb-3 flex items-center gap-2">
+              <span class="w-7 h-7 rounded-full bg-purple-500 text-white text-sm flex items-center justify-center font-bold">3</span>
+              MetaMask Initial Setup Steps
+            </h3>
+            <div class="text-sm text-purple-700 dark:text-purple-300">
+              <ol class="list-decimal list-inside space-y-2">
+                <li><strong>Install</strong> — Install the Chrome extension from <a href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer" class="text-purple-600 dark:text-purple-400 underline">metamask.io</a></li>
+                <li><strong>Create wallet</strong> — Select "Create a new wallet" → Set a password</li>
+                <li><strong>Backup seed phrase</strong> — <strong>Write down</strong> the 12 words on paper and store in a safe place</li>
+                <li><strong>Enable testnet</strong> — Settings > Advanced > Turn on "Show test networks"</li>
+                <li><strong>Select Sepolia</strong> — Choose "Sepolia test network" from the network dropdown</li>
+                <li><strong>Get test ETH</strong> — Receive free ETH from a faucet</li>
+              </ol>
+            </div>
+          </div>
+
+          <!-- Tip 4: Critical warnings -->
+          <div class="rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-5">
+            <h3 class="font-bold text-red-800 dark:text-red-300 text-base mb-3 flex items-center gap-2">
+              <span class="w-7 h-7 rounded-full bg-red-500 text-white text-sm flex items-center justify-center font-bold">4</span>
+              Critical Warnings
+            </h3>
+            <div class="text-sm text-red-700 dark:text-red-300 space-y-2">
+              <div class="rounded-lg bg-red-100 dark:bg-red-900/40 p-3 space-y-1.5">
+                <p>🚫 <strong>Never share your seed phrase (12 words) with anyone</strong> — whoever has your seed phrase can take all your assets.</p>
+                <p>🚫 <strong>Anyone asking for your seed phrase via DM is 100% a scam</strong>.</p>
+                <p>🚫 <strong>Don't put real money on mainnet right away</strong> — practice on testnet first.</p>
+                <p>🚫 <strong>Don't believe "it will definitely go up"</strong> — cryptocurrency is extremely volatile.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tip 5: How to use this app -->
+          <div class="rounded-xl bg-slate-100 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 p-5">
+            <h3 class="font-bold text-slate-800 dark:text-slate-200 text-base mb-3 flex items-center gap-2">
+              <span class="w-7 h-7 rounded-full bg-slate-500 text-white text-sm flex items-center justify-center font-bold">5</span>
+              How to Use This App
+            </h3>
+            <div class="text-sm text-slate-600 dark:text-slate-300">
+              <ol class="list-decimal list-inside space-y-1.5">
+                <li>Complete the MetaMask setup above</li>
+                <li>Click "Connect Wallet" and approve in the MetaMask popup</li>
+                <li>Verify that wallet address, balance, and network info are displayed</li>
+                <li>If not on Sepolia, click the "Switch to Sepolia" button</li>
+                <li>Check BTC and ETH prices in real-time in the price table below</li>
+                <li>Expand the key concept cards to learn blockchain basics</li>
+              </ol>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="mt-4 border-t border-slate-200 dark:border-slate-700 transition-colors duration-300">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400 dark:text-slate-500">
+      <p>
+        Data source:
+        <a href="https://www.coingecko.com/" target="_blank" rel="noopener noreferrer"
+           class="text-indigo-400 hover:text-indigo-500 dark:text-indigo-500 dark:hover:text-indigo-400 hover:underline">CoinGecko API</a>
+      </p>
+      <p>Blockchain Lab #2</p>
+    </div>
+  </footer>
+
+  <!-- JavaScript -->
+  <script>
+
+    // Beginner Tips modal open/close
+
+    function openTipModal() {
+      var modal = document.getElementById('tip-modal');
+      var backdrop = document.getElementById('tip-backdrop');
+      var content = document.getElementById('tip-content');
+
+      modal.classList.remove('hidden');
+
+      backdrop.classList.remove('modal-backdrop-out');
+      backdrop.classList.add('modal-backdrop-in');
+      content.classList.remove('modal-content-out');
+      content.classList.add('modal-content-in');
+
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeTipModal() {
+      var modal = document.getElementById('tip-modal');
+      var backdrop = document.getElementById('tip-backdrop');
+      var content = document.getElementById('tip-content');
+
+      backdrop.classList.remove('modal-backdrop-in');
+      backdrop.classList.add('modal-backdrop-out');
+      content.classList.remove('modal-content-in');
+      content.classList.add('modal-content-out');
+
+      setTimeout(function () {
+        modal.classList.add('hidden');
+        document.body.style.overflow = '';
+      }, 250);
+    }
+
+    // Close modal with ESC key
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !document.getElementById('tip-modal').classList.contains('hidden')) {
+        closeTipModal();
+      }
+    });
+
+    // Dark Mode
+
+    function toggleTheme() {
+      var isDark = document.documentElement.classList.toggle('dark');
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+      updateThemeIcon();
+    }
+
+    function updateThemeIcon() {
+      var isDark = document.documentElement.classList.contains('dark');
+      document.getElementById('theme-icon').textContent = isDark ? '☀️' : '🌙';
+    }
+
+    // MetaMask Wallet Connection
+
+    var SEPOLIA_CHAIN_ID = 11155111;
+
+    var NETWORK_NAMES = {
+      1: 'Ethereum Mainnet',
+      11155111: 'Sepolia Testnet',
+      137: 'Polygon',
+      56: 'BNB Chain',
+    };
+
+    var currentFullAddress = '';
+
+    function shortenAddress(addr) {
+      return addr.slice(0, 6) + '...' + addr.slice(-4);
+    }
+
+    function showWalletState(state) {
+      document.getElementById('wallet-loading').classList.add('hidden');
+      document.getElementById('wallet-not-installed').classList.add('hidden');
+      document.getElementById('wallet-disconnected').classList.add('hidden');
+      document.getElementById('wallet-connected').classList.add('hidden');
+
+      var el = document.getElementById('wallet-' + state);
+      if (el) el.classList.remove('hidden');
+    }
+
+    async function connectWallet() {
+      if (!window.ethereum) return;
+
+      var btn = document.getElementById('btn-connect');
+      btn.textContent = 'Connecting...';
+      btn.disabled = true;
+
+      try {
+        var provider = new ethers.BrowserProvider(window.ethereum);
+        await provider.send('eth_requestAccounts', []);
+        await updateWalletInfo(provider);
+      } catch (err) {
+        var errEl = document.getElementById('wallet-error-disconnected');
+        errEl.textContent = err.message || 'Wallet connection failed';
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.textContent = 'Connect Wallet';
+        btn.disabled = false;
+      }
+    }
+
+    async function updateWalletInfo(provider) {
+      var signer = await provider.getSigner();
+      var address = await signer.getAddress();
+      currentFullAddress = address;
+
+      var balanceWei = await provider.getBalance(address);
+      var balanceEth = ethers.formatEther(balanceWei);
+
+      var network = await provider.getNetwork();
+      var chainId = Number(network.chainId);
+      var isSepolia = chainId === SEPOLIA_CHAIN_ID;
+
+      document.getElementById('display-address').textContent = shortenAddress(address);
+      document.getElementById('display-address').title = address;
+      document.getElementById('display-balance').textContent = parseFloat(balanceEth).toFixed(4) + ' ETH';
+      document.getElementById('display-network').textContent = NETWORK_NAMES[chainId] || 'Chain ' + chainId;
+
+      document.getElementById('display-network-dot').className =
+        'h-2 w-2 rounded-full ' + (isSepolia ? 'bg-emerald-500' : 'bg-amber-500');
+
+      document.getElementById('sepolia-warning').classList.toggle('hidden', isSepolia);
+
+      showWalletState('connected');
+    }
+
+    async function switchToSepolia() {
+      if (!window.ethereum) return;
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x' + SEPOLIA_CHAIN_ID.toString(16) }],
+        });
+      } catch (err) {
+        var errEl = document.getElementById('wallet-error-connected');
+        errEl.textContent = err.message || 'Network switch failed';
+        errEl.classList.remove('hidden');
+      }
+    }
+
+    function disconnectWallet() {
+      currentFullAddress = '';
+      showWalletState('disconnected');
+    }
+
+    async function copyAddress() {
+      if (!currentFullAddress) return;
+      try {
+        await navigator.clipboard.writeText(currentFullAddress);
+        showToast('Address copied');
+      } catch {
+        showToast('Copy failed');
+      }
+    }
+
+    function showToast(message) {
+      var toast = document.createElement('div');
+      toast.className = 'fixed bottom-6 right-6 bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-800 px-4 py-2.5 rounded-xl shadow-xl text-sm font-medium z-50 toast-enter';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(function () {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s';
+        setTimeout(function () { toast.remove(); }, 300);
+      }, 2000);
+    }
+
+    function setupWalletEvents() {
+      if (!window.ethereum) return;
+
+      window.ethereum.on('accountsChanged', async function (accounts) {
+        if (accounts.length === 0) {
+          disconnectWallet();
+        } else {
+          var provider = new ethers.BrowserProvider(window.ethereum);
+          await updateWalletInfo(provider);
+        }
+      });
+
+      window.ethereum.on('chainChanged', function () {
+        window.location.reload();
+      });
+    }
+
+    var walletDetected = false;
+    function onWalletDetected() {
+      if (walletDetected) return;
+      walletDetected = true;
+      showWalletState('disconnected');
+      setupWalletEvents();
+    }
+
+    function retryDetection() {
+      walletDetected = false;
+      showWalletState('loading');
+      initWallet();
+    }
+
+    function initWallet() {
+      if (window.ethereum) {
+        onWalletDetected();
+        return;
+      }
+
+      window.addEventListener('ethereum#initialized', function () {
+        onWalletDetected();
+      }, { once: true });
+
+      window.addEventListener('eip6963:announceProvider', function (event) {
+        if (!window.ethereum && event.detail && event.detail.provider) {
+          window.ethereum = event.detail.provider;
+        }
+        onWalletDetected();
+      });
+      window.dispatchEvent(new Event('eip6963:requestProvider'));
+
+      var attempts = 0;
+      var maxAttempts = 50;
+      var checkInterval = setInterval(function () {
+        attempts++;
+        if (window.ethereum) {
+          clearInterval(checkInterval);
+          onWalletDetected();
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkInterval);
+          if (!walletDetected) {
+            showWalletState('not-installed');
+          }
+        }
+      }, 100);
+    }
+
+    // Price Tracking (CoinGecko API)
+
+    var REFRESH_INTERVAL = 30000;
+
+    // Previous prices for flash effect comparison
+    var previousPrices = {};
+
+    // Server API endpoint — Node.js server proxies CoinGecko
+    var API_BASE = 'http://localhost:5500';
+    var PRICE_API = API_BASE + '/api/prices';
+
+    function formatCurrency(value, currency) {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency,
+        maximumFractionDigits: currency === 'KRW' ? 0 : 2,
+      }).format(value);
+    }
+
+    function formatMarketCap(value) {
+      if (value >= 1e12) return '$' + (value / 1e12).toFixed(2) + 'T';
+      if (value >= 1e9) return '$' + (value / 1e9).toFixed(2) + 'B';
+      if (value >= 1e6) return '$' + (value / 1e6).toFixed(2) + 'M';
+      return '$' + value.toLocaleString();
+    }
+
+    async function fetchPrices() {
+      document.getElementById('price-loading').classList.remove('hidden');
+      document.getElementById('price-error').classList.add('hidden');
+      document.getElementById('price-table-wrapper').classList.add('hidden');
+
+      // Call Node.js server API (no CORS proxy needed)
+      var data = null;
+      try {
+        var res = await fetch(PRICE_API);
+        if (res.ok) {
+          var json = await res.json();
+          if (json && json.bitcoin && json.bitcoin.usd) data = json;
+        }
+      } catch (e) {
+        // Network error — data stays null
+      }
+
+      if (!data) {
+        document.getElementById('price-loading').classList.add('hidden');
+        document.getElementById('price-error').classList.remove('hidden');
+        document.getElementById('price-error-message').textContent = 'Unable to fetch price data.';
+        return;
+      }
+
+      var coins = [
+        { id: 'bitcoin', name: 'Bitcoin', symbol: 'BTC', icon: '🟠' },
+        { id: 'ethereum', name: 'Ethereum', symbol: 'ETH', icon: '🔷' },
+      ];
+
+      var tbody = document.getElementById('price-tbody');
+      tbody.innerHTML = '';
+
+      coins.forEach(function (coin) {
+        var info = data[coin.id];
+        if (!info) return;
+
+        // 24h change with ▲/▼ indicators (colorblind accessible)
+        var change = info.usd_24h_change;
+        var isPositive = change >= 0;
+        var arrow = isPositive ? '▲' : '▼';
+        var changeText = arrow + ' ' + (isPositive ? '+' : '') + change.toFixed(2) + '%';
+        var changeColor = isPositive
+          ? 'text-emerald-600 dark:text-emerald-400'
+          : 'text-red-600 dark:text-red-400';
+
+        // Compare with previous price for flash effect
+        var flashClass = '';
+        var prevPrice = previousPrices[coin.id];
+        if (prevPrice !== undefined && prevPrice !== info.usd) {
+          flashClass = info.usd > prevPrice ? 'flash-up' : 'flash-down';
+        }
+        previousPrices[coin.id] = info.usd;
+
+        var tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors' + (flashClass ? ' ' + flashClass : '');
+        tr.innerHTML =
+          '<td class="px-4 sm:px-6 py-4">' +
+            '<div class="flex items-center gap-2">' +
+              '<span class="text-lg">' + coin.icon + '</span>' +
+              '<span class="font-semibold text-slate-800 dark:text-slate-100">' + coin.name + '</span>' +
+              '<span class="text-sm text-slate-400 dark:text-slate-500">(' + coin.symbol + ')</span>' +
+            '</div>' +
+          '</td>' +
+          '<td class="px-4 sm:px-6 py-4 font-medium text-slate-700 dark:text-slate-200">' + formatCurrency(info.usd, 'USD') + '</td>' +
+          '<td class="px-4 sm:px-6 py-4 font-medium text-slate-700 dark:text-slate-200">' + formatCurrency(info.krw, 'KRW') + '</td>' +
+          '<td class="px-4 sm:px-6 py-4 font-semibold ' + changeColor + '">' + changeText + '</td>' +
+          '<td class="px-4 sm:px-6 py-4 text-slate-500 dark:text-slate-400">' + formatMarketCap(info.usd_market_cap) + '</td>';
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById('price-loading').classList.add('hidden');
+      document.getElementById('price-table-wrapper').classList.remove('hidden');
+
+      document.getElementById('last-updated').textContent = new Date().toLocaleTimeString('en-US');
+    }
+
+    // ════════════════════════════════════════════
+    // Part 3: Block Info (Infura)
+    // ════════════════════════════════════════════
+
+    async function fetchBlockInfo() {
+      document.getElementById('block-loading').classList.remove('hidden');
+      document.getElementById('block-error').classList.add('hidden');
+      document.getElementById('block-info-wrapper').classList.add('hidden');
+
+      try {
+        var res = await fetch(API_BASE + '/api/block-info');
+        if (!res.ok) throw new Error('Server error');
+        var data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        document.getElementById('block-number').textContent = '#' + data.blockNumber.toLocaleString();
+        document.getElementById('block-tx-count').textContent = data.transactionCount.toLocaleString();
+        document.getElementById('block-timestamp').textContent = new Date(data.timestamp * 1000).toLocaleString('en-US');
+        document.getElementById('block-gas').textContent = data.gasUsed.toLocaleString();
+        document.getElementById('block-hex').textContent = data.blockHex;
+        document.getElementById('block-miner').textContent = data.miner;
+        document.getElementById('block-miner').title = data.miner;
+
+        document.getElementById('block-loading').classList.add('hidden');
+        document.getElementById('block-info-wrapper').classList.remove('hidden');
+      } catch (err) {
+        document.getElementById('block-loading').classList.add('hidden');
+        document.getElementById('block-error').classList.remove('hidden');
+      }
+    }
+
+    // ════════════════════════════════════════════
+    // Part 4: Transaction Lookup
+    // ════════════════════════════════════════════
+
+    async function searchTransaction() {
+      var hashInput = document.getElementById('tx-hash-input');
+      var hash = hashInput.value.trim();
+
+      if (!hash || !hash.startsWith('0x')) {
+        document.getElementById('tx-result').classList.add('hidden');
+        document.getElementById('tx-error').classList.remove('hidden');
+        document.getElementById('tx-error-message').textContent = 'Please enter a valid transaction hash (starts with 0x)';
+        return;
+      }
+
+      var btn = document.getElementById('btn-search-tx');
+      btn.textContent = 'Searching...';
+      btn.disabled = true;
+      document.getElementById('tx-result').classList.add('hidden');
+      document.getElementById('tx-error').classList.add('hidden');
+
+      try {
+        var res = await fetch(API_BASE + '/api/tx?hash=' + encodeURIComponent(hash));
+        var data = await res.json();
+
+        if (data.error) {
+          document.getElementById('tx-error').classList.remove('hidden');
+          document.getElementById('tx-error-message').textContent = data.error;
+          return;
+        }
+
+        var isSuccess = data.status === '성공';
+        document.getElementById('tx-status-icon').textContent = isSuccess ? '✅' : '❌';
+        document.getElementById('tx-status-text').textContent = isSuccess ? 'Success' : 'Failed';
+
+        var badge = document.getElementById('tx-network-badge');
+        badge.textContent = data.network || 'Mainnet';
+        if (data.network && data.network.includes('Sepolia')) {
+          badge.className = 'ml-auto rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-500/20 text-amber-300';
+        } else {
+          badge.className = 'ml-auto rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-500/20 text-emerald-300';
+        }
+
+        document.getElementById('tx-hash').textContent = data.hash;
+        document.getElementById('tx-block').textContent = data.blockNumber ? '#' + data.blockNumber.toLocaleString() : 'Pending';
+        document.getElementById('tx-from').textContent = data.from;
+        document.getElementById('tx-to').textContent = data.to || 'Contract Creation';
+        document.getElementById('tx-value').textContent = data.value;
+        document.getElementById('tx-gas-price').textContent = data.gasPrice;
+        document.getElementById('tx-gas-used').textContent = data.gasUsed;
+
+        document.getElementById('tx-result').classList.remove('hidden');
+      } catch (err) {
+        document.getElementById('tx-error').classList.remove('hidden');
+        document.getElementById('tx-error-message').textContent = 'Lookup failed: ' + err.message;
+      } finally {
+        btn.textContent = 'Search';
+        btn.disabled = false;
+      }
+    }
+
+    // Enter key triggers transaction search
+    document.addEventListener('DOMContentLoaded', function () {
+      document.getElementById('tx-hash-input').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') searchTransaction();
+      });
+    });
+
+    // ════════════════════════════════════════════
+    // Part 5: Sepolia ETH Transfer
+    // ════════════════════════════════════════════
+
+    async function loadServerWallet() {
+      try {
+        var res = await fetch(API_BASE + '/api/wallet-info');
+        var data = await res.json();
+        if (data.error) return;
+
+        document.getElementById('server-address').textContent = data.address;
+        document.getElementById('server-balance').textContent = parseFloat(data.balance).toFixed(6) + ' ETH';
+      } catch (err) {
+        document.getElementById('server-address').textContent = 'Load failed';
+      }
+    }
+
+    async function sendETH() {
+      var toAddress = document.getElementById('send-to').value.trim();
+      var amount = document.getElementById('send-amount').value.trim();
+
+      if (!toAddress || !toAddress.startsWith('0x') || toAddress.length !== 42) {
+        document.getElementById('send-error').classList.remove('hidden');
+        document.getElementById('send-error-message').textContent = 'Please enter a valid Ethereum address (starts with 0x, 42 characters)';
+        return;
+      }
+      if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+        document.getElementById('send-error').classList.remove('hidden');
+        document.getElementById('send-error-message').textContent = 'Please enter a valid amount';
+        return;
+      }
+
+      var btn = document.getElementById('btn-send-eth');
+      btn.textContent = 'Sending...';
+      btn.disabled = true;
+      document.getElementById('send-loading').classList.remove('hidden');
+      document.getElementById('send-result').classList.add('hidden');
+      document.getElementById('send-error').classList.add('hidden');
+
+      try {
+        var res = await fetch(API_BASE + '/api/send-eth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: toAddress, amount: amount }),
+        });
+        var data = await res.json();
+
+        if (data.error) {
+          document.getElementById('send-error').classList.remove('hidden');
+          document.getElementById('send-error-message').textContent = data.error;
+          return;
+        }
+
+        document.getElementById('send-tx-hash').textContent = data.hash;
+        document.getElementById('send-block').textContent = '#' + data.blockNumber;
+        document.getElementById('send-amount-result').textContent = data.amount;
+        document.getElementById('send-etherscan-link').href = data.sepoliaLink;
+        document.getElementById('send-etherscan-link').textContent = 'View on Etherscan';
+
+        document.getElementById('send-result').classList.remove('hidden');
+        showToast('ETH transfer successful!');
+
+        loadServerWallet();
+      } catch (err) {
+        document.getElementById('send-error').classList.remove('hidden');
+        document.getElementById('send-error-message').textContent = 'Transfer failed: ' + err.message;
+      } finally {
+        btn.textContent = 'Send ETH';
+        btn.disabled = false;
+        document.getElementById('send-loading').classList.add('hidden');
+      }
+    }
+
+    // ════════════════════════════════════════════
+    // Part 6: Initialization
+    // ════════════════════════════════════════════
+
+    window.addEventListener('DOMContentLoaded', function () {
+      updateThemeIcon();
+      initWallet();
+      fetchPrices();
+      fetchBlockInfo();
+      loadServerWallet();
+      setInterval(fetchPrices, REFRESH_INTERVAL);
+
+      // Offline/online detection
+      var offlineBanner = document.getElementById('offline-banner');
+      window.addEventListener('offline', function () {
+        offlineBanner.classList.remove('hidden');
+      });
+      window.addEventListener('online', function () {
+        offlineBanner.classList.add('hidden');
+        showToast('Connection restored');
+        fetchPrices();
+      });
+    });
+
+  </script>
+</body>
+</html>
