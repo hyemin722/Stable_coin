@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Week 6 Faucet</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="./faucet-config.js"></script>
+  <style>
+    :root {
+      --bg: #081633;
+      --card: #0f1f46;
+      --line: #2d4a88;
+      --text: #ffffff;
+      --muted: #c9d8ff;
+      --primary: #6fb6ff;
+      --success: #44d17a;
+      --danger: #ff8a8a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 32px 16px 48px;
+    }
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+    }
+    h1 {
+      text-align: center;
+      margin: 0 0 10px;
+      font-size: 44px;
+    }
+    .subtitle {
+      text-align: center;
+      color: var(--muted);
+      margin-bottom: 28px;
+      line-height: 1.5;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 20px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 24px;
+    }
+    .section-title {
+      margin: 0 0 18px;
+      font-size: 24px;
+    }
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 14px 22px;
+      font-size: 16px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .btn-connect { background: var(--primary); color: #081633; }
+    .btn-claim { background: var(--success); color: #062614; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .info-row {
+      display: grid;
+      grid-template-columns: 170px 1fr;
+      gap: 10px 14px;
+      line-height: 1.7;
+      margin-bottom: 12px;
+    }
+    .label { color: var(--muted); }
+    .value { word-break: break-all; }
+    .status {
+      margin-top: 20px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      min-height: 64px;
+      line-height: 1.6;
+      background: rgba(255,255,255,0.03);
+    }
+    .ok { color: #b8ffd0; }
+    .err { color: #ffd1d1; }
+    .tx a { color: #9bd0ff; }
+    .chart-wrap {
+      height: 320px;
+    }
+    .tip {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 12px;
+      line-height: 1.6;
+    }
+    @media (max-width: 840px) {
+      .grid { grid-template-columns: 1fr; }
+      .info-row { grid-template-columns: 1fr; }
+      h1 { font-size: 36px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Sepolia Faucet</h1>
+    <div class="subtitle">
+      Connect MetaMask, check the faucet balance, see the fixed request amount, and claim 0.01 ETH.
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2 class="section-title">Wallet & Faucet</h2>
+        <div class="button-row">
+          <button class="btn-connect" id="connectBtn">Connect MetaMask</button>
+          <button class="btn-claim" id="claimBtn" disabled>Claim 0.01 ETH</button>
+        </div>
+
+        <div class="info-row">
+          <div class="label">Connected Wallet</div>
+          <div class="value" id="address">Not connected</div>
+
+          <div class="label">Current Network</div>
+          <div class="value" id="network">-</div>
+
+          <div class="label">Contract Address</div>
+          <div class="value" id="contractAddress">-</div>
+
+          <div class="label">Faucet Balance</div>
+          <div class="value" id="balance">-</div>
+
+          <div class="label">Request Amount</div>
+          <div class="value" id="requestAmount">0.01 ETH</div>
+
+          <div class="label">Next Claim Time</div>
+          <div class="value" id="nextClaim">-</div>
+        </div>
+
+        <div class="status" id="statusBox">Click Connect MetaMask first.</div>
+        <div class="tip">
+          Open this file with VS Code Live Server. Do not open it with file:///.
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="section-title">Faucet Balance Chart</h2>
+        <div class="chart-wrap">
+          <canvas id="balanceChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let provider;
+    let signer;
+    let contract;
+    let chart;
+
+    const addressEl = document.getElementById("address");
+    const networkEl = document.getElementById("network");
+    const contractAddressEl = document.getElementById("contractAddress");
+    const balanceEl = document.getElementById("balance");
+    const requestAmountEl = document.getElementById("requestAmount");
+    const nextClaimEl = document.getElementById("nextClaim");
+    const statusBox = document.getElementById("statusBox");
+    const connectBtn = document.getElementById("connectBtn");
+    const claimBtn = document.getElementById("claimBtn");
+
+    const chartData = {
+      labels: [],
+      datasets: [{
+        label: "Faucet Balance (ETH)",
+        data: [],
+        borderWidth: 2,
+        tension: 0.25
+      }]
+    };
+
+    function setStatus(message, kind = "") {
+      statusBox.className = "status " + kind;
+      statusBox.innerHTML = message;
+    }
+
+    function addChartPoint(balanceEth) {
+      const time = new Date().toLocaleTimeString();
+      chartData.labels.push(time);
+      chartData.datasets[0].data.push(Number(balanceEth));
+      if (chartData.labels.length > 10) {
+        chartData.labels.shift();
+        chartData.datasets[0].data.shift();
+      }
+      chart.update();
+    }
+
+    async function refreshInfo() {
+      const balanceWei = await contract.getBalance();
+      const balanceEth = ethers.formatEther(balanceWei);
+      balanceEl.textContent = balanceEth + " ETH";
+      addChartPoint(balanceEth);
+
+      const requestWei = await contract.getRequestAmount();
+      requestAmountEl.textContent = ethers.formatEther(requestWei) + " ETH";
+
+      const userAddress = await signer.getAddress();
+      const nextTs = await contract.getNextClaimTime(userAddress);
+      const nextTsNum = Number(nextTs);
+
+      if (nextTsNum === 0 || nextTsNum <= Math.floor(Date.now() / 1000)) {
+        nextClaimEl.textContent = "Available now";
+      } else {
+        nextClaimEl.textContent = new Date(nextTsNum * 1000).toLocaleString();
+      }
+    }
+
+    async function connectWallet() {
+      try {
+        if (!window.ethereum) {
+          setStatus("MetaMask is not available in this browser.", "err");
+          return;
+        }
+
+        provider = new ethers.BrowserProvider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        signer = await provider.getSigner();
+
+        const userAddress = await signer.getAddress();
+        const network = await provider.getNetwork();
+        addressEl.textContent = userAddress;
+        networkEl.textContent = `${network.name} (chainId: ${network.chainId})`;
+        contractAddressEl.textContent = window.FAUCET_CONFIG.CONTRACT_ADDRESS;
+
+        const code = await provider.getCode(window.FAUCET_CONFIG.CONTRACT_ADDRESS);
+        if (code === "0x") {
+          setStatus(
+            "No contract code found at this address on the current network. Switch MetaMask to the same network where you deployed the contract.",
+            "err"
+          );
+          claimBtn.disabled = true;
+          return;
+        }
+
+        contract = new ethers.Contract(
+          window.FAUCET_CONFIG.CONTRACT_ADDRESS,
+          window.FAUCET_CONFIG.ABI,
+          signer
+        );
+
+        await refreshInfo();
+        claimBtn.disabled = false;
+        setStatus("Wallet connected successfully.", "ok");
+      } catch (error) {
+        console.error("connect error:", error);
+        setStatus("Wallet connection error: " + (error.shortMessage || error.message || error), "err");
+      }
+    }
+
+    async function claim() {
+      try {
+        if (!contract) {
+          setStatus("Connect MetaMask first.", "err");
+          return;
+        }
+
+        setStatus("Submitting claim transaction. Please confirm in MetaMask.");
+        claimBtn.disabled = true;
+
+        const tx = await contract.claim();
+
+        setStatus(
+          `Transaction submitted.<br><span class="tx"><a target="_blank" href="https://sepolia.etherscan.io/tx/${tx.hash}">${tx.hash}</a></span>`
+        );
+
+        await tx.wait();
+
+        setStatus(
+          `Claim success.<br><span class="tx"><a target="_blank" href="https://sepolia.etherscan.io/tx/${tx.hash}">${tx.hash}</a></span>`,
+          "ok"
+        );
+
+        await refreshInfo();
+      } catch (error) {
+        console.error("claim error:", error);
+        setStatus("Claim error: " + (error.shortMessage || error.message || error), "err");
+      } finally {
+        claimBtn.disabled = false;
+      }
+    }
+
+    function initChart() {
+      chart = new Chart(document.getElementById("balanceChart"), {
+        type: "line",
+        data: chartData,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              ticks: { color: "#ffffff" },
+              grid: { color: "rgba(255,255,255,0.12)" }
+            },
+            x: {
+              ticks: { color: "#ffffff" },
+              grid: { color: "rgba(255,255,255,0.08)" }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: { color: "#ffffff" }
+            }
+          }
+        }
+      });
+    }
+
+    connectBtn.addEventListener("click", connectWallet);
+    claimBtn.addEventListener("click", claim);
+
+    window.addEventListener("load", () => {
+      initChart();
+      contractAddressEl.textContent = window.FAUCET_CONFIG.CONTRACT_ADDRESS;
+    });
+  </script>
+</body>
+</html>
