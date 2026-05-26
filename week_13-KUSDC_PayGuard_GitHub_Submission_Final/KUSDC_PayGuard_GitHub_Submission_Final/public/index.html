@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KUSDC PayGuard | Real GIWA Integration</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">PG</div>
+      <div>
+        <h1>KUSDC PayGuard</h1>
+        <p>GIWA Sepolia · MetaMask · Nodit RPC · Real On-chain Payment</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span id="pageModeBadge" class="pill muted">Portal</span>
+      <span id="serverStatus" class="pill muted">Server checking...</span>
+      <a id="customerLink" class="route-link secondary small" href="/customer">고객 결제 화면</a>
+      <a id="adminLink" class="route-link secondary small" href="/admin">관리자 정산 화면</a>
+      <button id="connectBtn" class="primary small">MetaMask 연결</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="heroSection" class="hero card">
+      <div>
+        <p class="eyebrow">Blockchain Term Project 2026</p>
+        <h2>결제만 하는 DApp에서<br><span>결제를 검증하고 설명하는 DApp</span>으로</h2>
+        <p class="hero-desc">이 화면은 데모 숫자만 보여주는 버전이 아니라, 실제 GIWA Sepolia 컨트랙트에 연결해서 KUSDC approve/pay 트랜잭션을 실행하고 Tx Hash를 Nodit RPC로 검증합니다.</p>
+      </div>
+      <div class="hero-checklist">
+        <div><b>1</b><span>MetaMask GIWA Sepolia 연결</span></div>
+        <div><b>2</b><span>KUSDC 잔액/allowance 실시간 조회</span></div>
+        <div><b>3</b><span>approve → CafePayment.pay 실제 실행</span></div>
+        <div><b>4</b><span>Nodit eth_getTransactionReceipt 검증</span></div>
+      </div>
+    </section>
+
+    <section id="portalPage" class="portal-grid">
+      <a class="portal-card customer" href="/customer">
+        <span class="portal-label">Customer Page</span>
+        <h3>고객 결제 화면</h3>
+        <p>손님은 메뉴 선택, MetaMask 연결, KUSDC 결제, Tx Hash 영수증, AI 결제 요약만 확인합니다.</p>
+        <b>손님으로 시연 시작 →</b>
+      </a>
+      <a class="portal-card admin" href="/admin">
+        <span class="portal-label">Admin Page</span>
+        <h3>관리자 정산 화면</h3>
+        <p>사장님은 전체 매출, 수수료, 정산 예정 금액, 최근 거래 목록, 리스크 리포트를 확인합니다.</p>
+        <b>관리자로 확인하기 →</b>
+      </a>
+    </section>
+
+    <section id="flowSection" class="card flow-card">
+      <div class="section-head compact">
+        <p class="eyebrow">Demo Flow Timeline</p>
+        <h3>결제 진행 타임라인</h3>
+        <p>발표 중 approve, pay, Tx Hash, Nodit 검증, AI 요약까지 어느 단계가 완료됐는지 한눈에 보여줍니다.</p>
+      </div>
+      <div id="flowTimeline" class="flow-timeline"></div>
+    </section>
+
+    <section id="customerPage" class="grid two">
+      <div class="card">
+        <div class="section-head">
+          <p class="eyebrow">Customer Payment</p>
+          <h3>사용자 결제 화면</h3>
+          <p>메뉴를 고르고 실제 KUSDC 결제를 실행합니다. 결제 시 MetaMask 확인 창이 실제로 뜹니다.</p>
+        </div>
+
+        <div class="menu-grid" id="menuGrid"></div>
+
+        <div class="control-box">
+          <div>
+            <label>수량</label>
+            <div class="qty-row">
+              <button id="minusQty" class="ghost">−</button>
+              <strong id="qtyText">1</strong>
+              <button id="plusQty" class="ghost">+</button>
+            </div>
+          </div>
+          <div class="total-box">
+            <span>결제 금액</span>
+            <strong id="amountText">0 KUSDC</strong>
+            <small>decimals = <span id="decimalsText">6</span></small>
+          </div>
+        </div>
+
+        <div class="status-grid">
+          <div class="mini"><span>Wallet</span><b id="walletText">Not connected</b></div>
+          <div class="mini"><span>Network</span><b id="networkText">-</b></div>
+          <div class="mini"><span>KUSDC Balance</span><b id="balanceText">-</b></div>
+          <div class="mini"><span>Allowance</span><b id="allowanceText">-</b></div>
+        </div>
+
+        <div class="action-row">
+          <button id="refreshBtn" class="secondary">온체인 상태 새로고침</button>
+          <button id="approveBtn" class="secondary">1단계: approve</button>
+          <button id="payBtn" class="primary">2단계: pay 결제</button>
+        </div>
+        <button id="approvePayBtn" class="primary full">한 번에 시연: approve 필요 시 실행 → pay 실행 → Nodit 검증</button>
+
+        <div class="warning-box">
+          <b>중요</b> 실제 결제라서 테스트넷 ETH 가스비와 KUSDC 잔액이 필요합니다. 잔액이 0이면 Remix에서 mint를 먼저 해야 합니다.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-head">
+          <p class="eyebrow">Blockchain Receipt</p>
+          <h3>블록체인 영수증 / Tx Hash 검증</h3>
+          <p>결제 후 생성된 Tx Hash를 Nodit RPC로 다시 조회해서 성공 여부를 확인합니다.</p>
+        </div>
+
+        <div id="receiptEmpty" class="empty-receipt">
+          <div class="spinner-icon">◎</div>
+          <p>아직 결제 트랜잭션이 없습니다.</p>
+          <small>결제 실행 후 Tx Hash, block number, status가 표시됩니다.</small>
+        </div>
+
+        <div id="receiptCard" class="receipt hidden">
+          <div class="receipt-top">
+            <div>
+              <span>Payment Status</span>
+              <h4 id="receiptMenu">-</h4>
+            </div>
+            <b id="receiptStatus" class="status pending">PENDING</b>
+          </div>
+          <div class="receipt-grid">
+            <div><span>Amount</span><b id="receiptAmount">-</b></div>
+            <div><span>Fee</span><b id="receiptFee">-</b></div>
+            <div><span>Settlement</span><b id="receiptSettlement">-</b></div>
+            <div><span>Block</span><b id="receiptBlock">-</b></div>
+          </div>
+          <div class="hash-box">
+            <span>Tx Hash</span>
+            <code id="receiptHash">-</code>
+            <button id="copyHashBtn" class="ghost small">복사</button>
+          </div>
+          <div class="action-row">
+            <button id="verifyBtn" class="secondary">Nodit로 다시 검증</button>
+            <button id="openExplorerBtn" class="secondary">Hash 복사 후 탐색기 확인</button>
+          </div>
+
+          <div class="risk-card">
+            <div class="risk-head">
+              <div>
+                <p class="eyebrow">PayGuard Risk Score</p>
+                <h4 id="riskScoreText">MEDIUM</h4>
+              </div>
+              <div id="riskBadge" class="risk-badge medium">CHECKING</div>
+            </div>
+            <div id="riskChecks" class="risk-checks"></div>
+          </div>
+
+          <div class="ai-receipt-card">
+            <p class="eyebrow">AI Receipt Summary</p>
+            <h4>AI 영수증 카드</h4>
+            <p id="aiReceiptText">결제 검증 후 자동 생성됩니다.</p>
+          </div>
+
+          <div class="qr-card">
+            <div>
+              <p class="eyebrow">QR Receipt</p>
+              <h4>스캔 가능한 Tx Hash 영수증</h4>
+              <p>QR 안에는 결제 메뉴, 금액, 상태, 블록 번호, Tx Hash가 들어갑니다.</p>
+            </div>
+            <img id="qrReceiptImg" alt="Tx Hash QR receipt" />
+          </div>
+        </div>
+
+        <div class="ai-box">
+          <p class="eyebrow">AI Summary</p>
+          <p id="aiSummary">결제가 실행되면 AI 요약 문장이 자동으로 생성됩니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="adminPage" class="grid two">
+      <div class="card">
+        <div class="section-head">
+          <p class="eyebrow">Admin Dashboard</p>
+          <h3>관리자 정산 화면</h3>
+          <p>실제 결제 성공 건을 기준으로 매출, 수수료, 정산 예정 금액을 계산합니다.</p>
+        </div>
+
+        <div class="metrics">
+          <div><span>성공 결제</span><b id="successCount">0건</b></div>
+          <div><span>총 매출</span><b id="totalSales">0 KUSDC</b></div>
+          <div><span>서비스 수수료</span><b id="totalFee">0 KUSDC</b></div>
+          <div><span>정산 예정</span><b id="totalSettlement">0 KUSDC</b></div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Menu</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Tx</th>
+              </tr>
+            </thead>
+            <tbody id="txTableBody">
+              <tr><td colspan="5" class="center muted-text">아직 저장된 결제 내역이 없습니다.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="admin-ai-report">
+          <p class="eyebrow">AI Settlement Report</p>
+          <h4>오늘의 AI 정산 리포트</h4>
+          <p id="adminAiReport">아직 결제 내역이 없습니다. 결제 성공 후 오늘의 매출, 수수료, 정산 예정 금액이 자동 요약됩니다.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-head">
+          <p class="eyebrow">Contract / Risk Check</p>
+          <h3>컨트랙트 상태 확인</h3>
+          <p>화이트리스트, pause, blacklist, merchant, feeRate를 실제 컨트랙트에서 조회합니다.</p>
+        </div>
+
+        <div class="contract-list">
+          <div><span>KUSDC</span><code id="kusdcAddressText"></code></div>
+          <div><span>CafePayment</span><code id="cafeAddressText"></code></div>
+          <div><span>Whitelisted</span><b id="whitelistText">-</b></div>
+          <div><span>Paused</span><b id="pausedText">-</b></div>
+          <div><span>Blacklisted</span><b id="blacklistedText">-</b></div>
+          <div><span>Merchant</span><code id="merchantText">-</code></div>
+          <div><span>Fee Rate</span><b id="feeRateText">-</b></div>
+          <div><span>Fee Balance</span><b id="feeBalanceText">-</b></div>
+          <div><span>Latest Block</span><b id="latestBlockText">-</b></div>
+        </div>
+
+        <div class="action-row">
+          <button id="whitelistBtn" class="secondary">Owner: KUSDC whitelist 등록</button>
+          <button id="mintBtn" class="secondary">Minter: 내 지갑에 100 KUSDC mint</button>
+        </div>
+        <div class="warning-box subtle">
+          whitelist/mint 버튼은 연결된 지갑이 owner 또는 minter 권한이 있을 때만 성공합니다. 실패해도 웹사이트 오류가 아니라 권한 문제일 수 있습니다.
+        </div>
+      </div>
+    </section>
+
+    <section id="logSection" class="card log-card">
+      <div class="section-head compact">
+        <p class="eyebrow">Live Log</p>
+        <h3>시연 로그</h3>
+      </div>
+      <pre id="logBox"></pre>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

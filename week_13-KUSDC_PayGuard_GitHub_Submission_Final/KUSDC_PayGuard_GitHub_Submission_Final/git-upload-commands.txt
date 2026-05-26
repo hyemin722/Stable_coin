@@ -1,0 +1,6 @@
+git init
+git add .
+git commit -m "Initial commit: KUSDC PayGuard project"
+git branch -M main
+git remote add origin https://github.com/본인아이디/KUSDC-PayGuard.git
+git push -u origin main
