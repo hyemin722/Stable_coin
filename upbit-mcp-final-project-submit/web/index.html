@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Upbit MCP 실시간 코인 정보 대시보드</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+    }
+
+    header {
+      padding: 28px 32px 18px 32px;
+      border-bottom: 1px solid #334155;
+      background: #111827;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 5px 10px;
+      margin-bottom: 10px;
+      border: 1px solid #22d3ee;
+      border-radius: 999px;
+      color: #67e8f9;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    h1 {
+      margin: 0 0 10px 0;
+      font-size: 30px;
+      color: #f8fafc;
+    }
+
+    .subtitle {
+      margin: 0;
+      max-width: 1100px;
+      line-height: 1.6;
+      color: #cbd5e1;
+      font-size: 15px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .flow-item {
+      padding: 10px;
+      text-align: center;
+      border: 1px solid #475569;
+      border-radius: 8px;
+      background: #1e293b;
+      font-size: 13px;
+      color: #e2e8f0;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 430px 1fr;
+      gap: 20px;
+      padding: 24px 32px;
+    }
+
+    section {
+      border: 1px solid #334155;
+      border-radius: 12px;
+      background: #111827;
+      padding: 20px;
+    }
+
+    h2 {
+      margin: 0 0 16px 0;
+      font-size: 20px;
+      color: #f8fafc;
+    }
+
+    h3 {
+      margin: 20px 0 10px 0;
+      font-size: 15px;
+      color: #93c5fd;
+    }
+
+    label {
+      display: block;
+      margin-top: 12px;
+      margin-bottom: 6px;
+      font-size: 13px;
+      color: #bfdbfe;
+      font-weight: bold;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 11px;
+      border: 1px solid #475569;
+      border-radius: 8px;
+      background: #020617;
+      color: #e5e7eb;
+      font-size: 14px;
+    }
+
+    .quick-buttons {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .quick-buttons button {
+      padding: 8px 4px;
+      font-size: 12px;
+      background: #334155;
+    }
+
+    .button-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 12px;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      background: #2563eb;
+    }
+
+    button:hover {
+      opacity: 0.88;
+    }
+
+    .green {
+      background: #16a34a;
+    }
+
+    .orange {
+      background: #f97316;
+    }
+
+    .gray {
+      background: #475569;
+    }
+
+    .tool-card {
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 10px;
+      background: #0f172a;
+    }
+
+    .tool-name {
+      color: #60a5fa;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .tool-desc {
+      color: #cbd5e1;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .result-status {
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background: #0f172a;
+      color: #bfdbfe;
+      font-size: 13px;
+      margin-bottom: 14px;
+    }
+
+    pre {
+      width: 100%;
+      height: 560px;
+      overflow: auto;
+      margin: 0;
+      padding: 18px;
+      border-radius: 10px;
+      background: #020617;
+      color: #f8fafc;
+      border: 1px solid #334155;
+      font-size: 14px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .note {
+      margin-top: 12px;
+      color: #94a3b8;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 1000px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+
+      .flow {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="badge">Blockchain Practice Final Project</div>
+    <h1>Upbit MCP 실시간 코인 정보 대시보드</h1>
+    <p class="subtitle">
+      MCP 클라이언트가 MCP 서버의 tool을 호출하여 Upbit의 실시간 코인 가격, 24시간 변동률,
+      거래량, 거래대금, 호가창/주문장, 최근 체결 내역, 주요 코인 비교 데이터를 조회하는 프로젝트입니다.
+    </p>
+
+    <div class="flow">
+      <div class="flow-item">Browser UI</div>
+      <div class="flow-item">Web Backend</div>
+      <div class="flow-item">MCP ClientSession</div>
+      <div class="flow-item">Upbit MCP Server</div>
+      <div class="flow-item">Upbit Public API</div>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>조회 설정</h2>
+
+      <label for="marketSelect">마켓 선택</label>
+      <select id="marketSelect">
+        <option value="KRW-BTC">KRW-BTC / 비트코인</option>
+        <option value="KRW-ETH">KRW-ETH / 이더리움</option>
+        <option value="KRW-XRP">KRW-XRP / 리플</option>
+        <option value="KRW-SOL">KRW-SOL / 솔라나</option>
+        <option value="KRW-DOGE">KRW-DOGE / 도지코인</option>
+      </select>
+
+      <label for="marketInput">직접 입력</label>
+      <input id="marketInput" value="KRW-BTC" placeholder="예: KRW-BTC 또는 BTC" />
+
+      <div class="quick-buttons">
+        <button onclick="setMarket('KRW-BTC')">BTC</button>
+        <button onclick="setMarket('KRW-ETH')">ETH</button>
+        <button onclick="setMarket('KRW-XRP')">XRP</button>
+        <button onclick="setMarket('KRW-SOL')">SOL</button>
+        <button onclick="setMarket('KRW-DOGE')">DOGE</button>
+      </div>
+
+      <label for="compareInput">비교 마켓</label>
+      <input id="compareInput" value="KRW-BTC,KRW-ETH,KRW-XRP" />
+
+      <label for="countInput">조회 개수</label>
+      <input id="countInput" type="number" value="10" min="1" max="50" />
+
+      <label for="candleUnit">분봉 단위</label>
+      <select id="candleUnit">
+        <option value="1">1분</option>
+        <option value="3">3분</option>
+        <option value="5">5분</option>
+        <option value="10">10분</option>
+        <option value="15">15분</option>
+        <option value="30">30분</option>
+        <option value="60" selected>60분</option>
+      </select>
+
+      <div class="button-grid">
+        <button onclick="callApi('/api/tools')">Tool 목록 확인</button>
+        <button class="green" onclick="callApi('/api/ticker')">현재가 / 24시간 변동률</button>
+        <button onclick="callApi('/api/orderbook')">호가창 / 주문장</button>
+        <button onclick="callApi('/api/trades')">최근 체결 내역</button>
+        <button class="green" onclick="callApi('/api/summary')">가격·호가·거래대금 요약</button>
+        <button class="orange" onclick="callApi('/api/markets')">KRW 마켓 목록</button>
+        <button class="gray" onclick="callApi('/api/compare')">주요 코인 비교</button>
+        <button class="gray" onclick="callApi('/api/candles')">분봉 캔들 조회</button>
+      </div>
+
+      <h3>MCP Tool Discovery</h3>
+      <div id="toolList">
+        <div class="tool-card">
+          <div class="tool-name">get_market_list</div>
+          <div class="tool-desc">업비트에서 거래 가능한 마켓 목록을 조회합니다.</div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-name">get_ticker</div>
+          <div class="tool-desc">선택한 마켓의 현재가, 24시간 변동률, 거래량, 거래대금을 조회합니다.</div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-name">get_orderbook</div>
+          <div class="tool-desc">선택한 마켓의 호가창/주문장 데이터를 조회합니다.</div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-name">get_recent_trades</div>
+          <div class="tool-desc">최근 체결 내역을 조회합니다.</div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-name">get_market_summary</div>
+          <div class="tool-desc">현재가, 최우선 매수·매도 호가, 스프레드, 거래대금을 요약합니다.</div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-name">compare_markets</div>
+          <div class="tool-desc">주요 코인의 현재가, 변동률, 거래대금을 비교합니다.</div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-name">get_minute_candles</div>
+          <div class="tool-desc">분봉 캔들 데이터를 조회합니다.</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>실행 결과</h2>
+      <div id="status" class="result-status">대기 중</div>
+      <pre id="result">MCP 서버에서 반환된 Upbit 실시간 데이터 조회 결과가 이 영역에 표시됩니다.</pre>
+      <p class="note">
+        이 화면은 브라우저가 로컬 백엔드에 요청하고, 백엔드가 MCP 클라이언트로 동작하여
+        Upbit MCP 서버의 tool을 호출한 결과를 보여줍니다.
+      </p>
+    </section>
+  </main>
+
+  <script>
+    const resultBox = document.getElementById("result");
+    const statusBox = document.getElementById("status");
+    const marketSelect = document.getElementById("marketSelect");
+    const marketInput = document.getElementById("marketInput");
+    const compareInput = document.getElementById("compareInput");
+    const countInput = document.getElementById("countInput");
+    const candleUnit = document.getElementById("candleUnit");
+
+    marketSelect.addEventListener("change", () => {
+      marketInput.value = marketSelect.value;
+    });
+
+    function setMarket(market) {
+      marketInput.value = market;
+      marketSelect.value = market;
+    }
+
+    function getParams() {
+      const params = new URLSearchParams();
+
+      if (marketInput.value.trim()) {
+        params.set("market", marketInput.value.trim());
+      }
+
+      if (compareInput.value.trim()) {
+        params.set("markets", compareInput.value.trim());
+      }
+
+      if (countInput.value.trim()) {
+        params.set("count", countInput.value.trim());
+      }
+
+      if (candleUnit.value.trim()) {
+        params.set("unit", candleUnit.value.trim());
+      }
+
+      return params.toString();
+    }
+
+    async function callApi(path) {
+      try {
+        statusBox.textContent = "요청 중: " + path;
+        resultBox.textContent = "MCP 서버에 요청을 보내는 중입니다...";
+
+        const query = getParams();
+        const url = query ? `${path}?${query}` : path;
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (!response.ok) {
+          statusBox.textContent = "오류 발생";
+          resultBox.textContent = JSON.stringify(data, null, 2);
+          return;
+        }
+
+     statusBox.textContent = "성공: MCP 서버 응답";
+
+if (data.result) {
+  resultBox.textContent = data.result;
+} else if (data.tools) {
+  resultBox.textContent =
+    "MCP Tool 목록\n\n" +
+    data.tools.map((tool, index) => {
+      return `${index + 1}. ${tool.name}\n   ${tool.description || "설명 없음"}`;
+    }).join("\n\n");
+} else {
+  resultBox.textContent = JSON.stringify(data, null, 2);
+}
+
+if (path === "/api/tools" && data.tools) {
+  renderTools(data.tools);
+}
+      } catch (error) {
+        statusBox.textContent = "오류 발생";
+        resultBox.textContent = String(error);
+      }
+    }
+
+    function renderTools(tools) {
+      const toolList = document.getElementById("toolList");
+      toolList.innerHTML = "";
+
+      tools.forEach((tool) => {
+        const card = document.createElement("div");
+        card.className = "tool-card";
+
+        const name = document.createElement("div");
+        name.className = "tool-name";
+        name.textContent = tool.name || "unknown_tool";
+
+        const desc = document.createElement("div");
+        desc.className = "tool-desc";
+        desc.textContent = tool.description || "설명 없음";
+
+        card.appendChild(name);
+        card.appendChild(desc);
+        toolList.appendChild(card);
+      });
+    }
+
+    callApi("/api/tools");
+  </script>
+</body>
+</html>
